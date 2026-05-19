@@ -1,0 +1,7 @@
+torch
+transformers
+qwen-vl-utils
+chromadb
+sentence-transformers
+Pillow
+matplotlib
