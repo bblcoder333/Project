@@ -49,9 +49,9 @@ for image_file in image_files:
     out_path  = os.path.join("outputs/ui_analysis", f"{screen_id}.json")
 
     # Skip if already processed
-    if os.path.exists(out_path):
-        print(f"⏭️  Skipping {image_file} — already processed")
-        continue
+    #if os.path.exists(out_path):
+        #print(f"⏭️  Skipping {image_file} — already processed")
+        #continue
 
     print(f"\n── Agent 1-4 Pipeline: {image_file} (topic: {topic}) ──")
 
@@ -59,7 +59,7 @@ for image_file in image_files:
         # ── Agent 1 — Perception ─────────────────────────────────────────
         ui_data         = analyze_ui(full_path, model, processor)
         ui_data["topic"] = topic
-        save_ui_data(ui_data)
+        json_path, txt_path = save_ui_data(ui_data)
         print(f"✅ Agent 1 complete — UI data saved")
 
         # ── Agent 2 — RAG Retrieval ───────────────────────────────────────

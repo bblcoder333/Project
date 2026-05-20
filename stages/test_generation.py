@@ -3,10 +3,7 @@ import re
 import csv
 import os
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
 
-
-# ─── PROMPT ───────────────────────────────────────────────────────────────────
 TESTCASE_PROMPT_TEMPLATE = """
 You are a senior QA engineer (mobile apps). Generate REALISTIC, high-quality test cases from the given screen description.
 
@@ -50,6 +47,9 @@ SCREEN DESCRIPTION:
 \"\"\"
 {description}
 \"\"\"
+
+STRUCTURED UI COMPONENTS:
+{elements}
 """
 
 CSV_COLUMNS = [
@@ -67,30 +67,29 @@ CSV_COLUMNS = [
 ]
 
 
-# ─── INFERENCE ────────────────────────────────────────────────────────────────
 def generate_test_cases(ui_data: dict, retrieved_chunks: list,
                         model, tokenizer) -> dict:
     context = "\n".join([f"- {c['text']}" for c in retrieved_chunks])
 
     prompt = TESTCASE_PROMPT_TEMPLATE.format(
-        screen_id        = ui_data.get("screen_id", "unknown"),
-        topic            = ui_data.get("topic", "unknown"),
-        retrieved_context= context,
-        description      = ui_data.get("description", ""),
-        elements         = ui_data.get("structured_elements", ""),
+        screen_id         = ui_data.get("screen_id", "unknown"),
+        topic             = ui_data.get("topic", "unknown"),
+        retrieved_context = context,
+        description       = ui_data.get("description", ""),
+        elements          = ui_data.get("structured_elements", ""),
     )
 
     inputs = tokenizer(
         prompt,
         return_tensors="pt",
         truncation=True,
-        max_length=3500,
+        max_length=4096,
     ).to("cuda")
 
     with torch.no_grad():
         ids = model.generate(
             **inputs,
-            max_new_tokens=800,
+            max_new_tokens=1500,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
         )
@@ -102,11 +101,15 @@ def generate_test_cases(ui_data: dict, retrieved_chunks: list,
     try:
         blocks = re.findall(r'\{.*\}', raw, re.DOTALL)
         if not blocks:
-            raise ValueError("No JSON block found in output")
+            print(f"⚠️  No JSON block found. Raw output preview:\n{raw[:300]}")
+            return {"test_cases": []}
         candidate = max(blocks, key=len)
-        return json.loads(candidate)
+        cleaned   = re.sub(r'//[^\n]*', '', candidate)
+        cleaned   = re.sub(r',\s*([}\]])', r'\1', cleaned)
+        return json.loads(cleaned)
     except json.JSONDecodeError as e:
         print(f"❌ JSON parse failed: {e}")
+        print(f"⚠️  Raw output preview:\n{raw[:300]}")
         return {"test_cases": []}
 
 

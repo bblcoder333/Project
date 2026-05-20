@@ -1,0 +1,6 @@
+{
+  "screen_id": "295",
+  "description": "This screen is a leaderboard for a mobile app, displaying the top learners in a course. The layout is organized in a list format with each learner's name, XP points, and rank. The visual design system uses a light blue background with white text and icons. The typography system includes a mix of font sizes and weights, with larger titles and smaller body text. The background system features a light blue gradient for the main content area. Accessibility flags include potential issues with text contrast and font size. Key interactive components include the learner names, XP points, and rank numbers.\n\nScreen type/purpose: Leaderboard for a course in a mobile app.\nPrimary CTA(s): None.\nMain navigation pattern: Tabs at the top for \"This Course\" and \"Total.\"\nDominant colors: Light blue, white, and grey.\nTypography system: Roboto font family, size range 16-24sp, weight range 400-500.\nBackground system: Light blue gradient for the main content area.\nAccessibility flags: Potential issues with text contrast and font size.\nKey interactive components: Learner names, XP points, rank numbers, profile icons.",
+  "structured_elements": "",
+  "topic": "list"
+}

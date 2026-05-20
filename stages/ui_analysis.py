@@ -6,9 +6,8 @@ from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
 
-# ─── PROMPT ───────────────────────────────────────────────────────────────────
 SCREENSHOT_PROMPT = """
-You are a senior mobile UI/UX analyst and frontend design reviewer.
+You are a senior mobile UI/UX analyst, accessibility auditor, and frontend design reviewer.
 
 You are analyzing ONE FINAL IMPLEMENTED MOBILE APP SCREENSHOT.
 Describe the screen in detail for a developer who cannot see the image.
@@ -35,14 +34,89 @@ For important UI components, describe:
 - Border colors
 - Shadows/elevation
 - Rounded corners / border radius
-- Typography style
-- Estimated font family/style if recognizable
-  (e.g., San Francisco, Roboto, Inter, Material Design style)
-- Font weight and hierarchy
-  (bold heading, medium subtitle, small caption, etc.)
-- Contrast and readability
 - Spacing and visual density
 - Icon style (outlined, filled, minimal, skeuomorphic, etc.)
+
+TYPOGRAPHY & FONT ANALYSIS (analyze every text element):
+For EACH distinct text element or text group, describe:
+- Estimated font family/style
+  (e.g., San Francisco, Roboto, Inter, Material Design style, serif, sans-serif)
+- Font weight
+  (e.g., thin ~100, light ~300, regular ~400, medium ~500, semibold ~600, bold ~700, extrabold ~800)
+- Estimated font size in sp
+  (e.g., display ~34sp, heading ~24sp, title ~20sp, body ~16sp, caption ~12sp, label ~11sp)
+- Letter spacing / tracking
+  (tight, normal, wide, all-caps with tracking)
+- Line height / leading
+  (compact, normal, relaxed)
+- Text alignment
+  (left, center, right, justified)
+- Text decoration
+  (underline, strikethrough, none)
+- Text truncation or overflow behavior if visible
+  (ellipsis, clipping, wrapping)
+- Font hierarchy level
+  (H1, H2, H3, body, caption, label, helper text, placeholder)
+
+TYPOGRAPHY ACCESSIBILITY AUDIT (per text element):
+Evaluate each text element against these accessibility standards:
+- Minimum font size: flag any text estimated below 12sp as potentially inaccessible
+- Font weight readability: flag thin fonts (weight ~100-200) on low-contrast backgrounds
+- Text contrast:
+  * Normal text (<18sp or <14sp bold): needs minimum 4.5:1 contrast ratio
+  * Large text (≥18sp or ≥14sp bold): needs minimum 3:1 contrast ratio
+  * Estimate contrast as: Pass, Likely Pass, Likely Fail, or Fail based on visual inspection
+- Line length readability: flag lines exceeding ~75 characters as potentially hard to read
+- Touch target size for text links: minimum 44x44dp recommended
+- All-caps text: flag if used for body text (reduces readability for dyslexic users)
+- Placeholder text contrast: placeholder text is often low contrast — flag if appears grey on white
+- Dynamic text support: note if layout appears to support text scaling
+- Text on image/gradient backgrounds: flag if text appears over busy backgrounds without overlay
+
+BACKGROUND & CONTAINER ANALYSIS (analyze every background layer):
+For EACH distinct background region or container, describe:
+- Background type:
+  (solid color, linear gradient, radial gradient, image, blur/frosted glass,
+   glassmorphism, mesh gradient, pattern, dark overlay, transparent, none)
+- Background color or gradient:
+  (describe start/end colors and direction for gradients,
+   e.g., top-left blue #1A73E8 → bottom-right purple #6C47FF)
+- Overlay or scrim:
+  (describe any dark/light overlay on top of images or gradients,
+   e.g., 40% black scrim over hero image)
+- Card and container backgrounds:
+  (white card on grey background, elevated surface, flat surface,
+   border only, outlined card, filled card)
+- Elevation and shadow:
+  (no shadow, subtle shadow, strong drop shadow, inner shadow,
+   Material elevation level if recognizable: 0dp, 2dp, 4dp, 8dp, 16dp)
+- Border and dividers:
+  (hairline dividers, full borders, dashed borders, no borders,
+   estimated border color and thickness)
+- Corner radius per container:
+  (sharp corners 0dp, slight rounding ~4dp, medium ~8dp,
+   large ~16dp, pill-shaped ~50dp, fully circular)
+- Transparency and layering:
+  (describe if any elements appear semi-transparent or layered over each other)
+- Background pattern or texture:
+  (flat, subtle noise, grain, geometric pattern, illustration)
+
+BACKGROUND ACCESSIBILITY AUDIT (per background region):
+Evaluate each background against these accessibility standards:
+- Text over background contrast:
+  * Flag any text placed directly over busy images without sufficient overlay
+  * Flag gradient backgrounds where text contrast may vary across the element
+  * Estimate contrast as: Pass, Likely Pass, Likely Fail, or Fail
+- Background color and cognitive load:
+  * Flag highly saturated or bright backgrounds that may cause visual fatigue
+  * Flag pure white (#FFFFFF) backgrounds with no surface differentiation
+  * Flag pure black (#000000) backgrounds with harsh contrast
+- Dark mode compatibility clues:
+  * Note if the background palette appears dark-mode friendly or strictly light
+- Motion and animation hints:
+  * Note any animated background indicators (shimmer, pulse, loading states)
+- Focus visibility on backgrounds:
+  * Flag if interactive elements on this background would have poor focus ring visibility
 
 INTERACTION + POINTER ANALYSIS:
 - Identify likely tappable/clickable areas.
@@ -53,22 +127,28 @@ INTERACTION + POINTER ANALYSIS:
 - Identify the primary CTA and secondary actions.
 - Mention hover/pointer style clues if applicable.
 
-BACKGROUND + CONTAINER ANALYSIS:
-- Describe the overall background:
-  solid color, gradient, image, blur, glassmorphism, etc.
-- Mention cards, containers, sections, and grouping behavior.
-- Describe layering and hierarchy between components.
-
-OUTPUT STRUCTURE (use these headings exactly):
+OUTPUT STRUCTURE — YOU MUST USE THESE EXACT HEADINGS FOR EVERY SCREEN NO EXCEPTIONS:
 
 A) Screen purpose and type:
 B) Layout top to bottom:
 C) Visual design system:
-D) Component inventory (grouped):
-E) Primary actions + navigation:
-F) Interaction and usability observations:
+D) Typography analysis (per text element):
+E) Typography accessibility audit:
+F) Background and container analysis (per region):
+G) Background accessibility audit:
+H) Component inventory (grouped):
+I) Primary actions + navigation:
+J) Interaction and usability observations:
 
-Write 16-26 sentences total.
+CRITICAL RULES FOR OUTPUT:
+- You MUST output ALL sections A through J every time.
+- You MUST use the exact letter headings shown above.
+- Do NOT merge sections into paragraphs.
+- Do NOT skip any section even if the screen is simple.
+- Each section must be on its own line starting with the letter heading.
+- Write 24-35 sentences total spread across all sections.
+
+Write 24-35 sentences total.
 Be compact but highly detailed and information-dense.
 
 End with this exact recap format:
@@ -77,19 +157,19 @@ End with this exact recap format:
 - Primary CTA(s):
 - Main navigation pattern:
 - Dominant colors:
-- Typography style:
+- Typography system: (font family, size range, weight range)
+- Background system: (background types used, dominant surface color)
+- Accessibility flags: (list any potential issues found)
 - Key interactive components:
-
 
 Provide your analysis inside these tags:
 [DESCRIPTION]
-(Put your A-F analysis and recap here)
+(Put your A-J analysis and recap here)
 
 [ELEMENTS]
 (Provide a bulleted list of just the interactive components found)
 """
 
-# ─── MODEL LOAD ───────────────────────────────────────────────────────────────
 def load_model():
     model = Qwen2VLForConditionalGeneration.from_pretrained(
         "Qwen/Qwen2-VL-7B-Instruct",
@@ -131,13 +211,21 @@ def analyze_ui(image_path: str, model, processor) -> dict:
         return_tensors="pt",
     ).to("cuda")
 
-    generated_ids = model.generate(**inputs, max_new_tokens=512, do_sample=False)
+    generated_ids = model.generate(**inputs, max_new_tokens=1024, do_sample=False)
     output = processor.batch_decode(
         generated_ids[:, inputs.input_ids.shape[1]:],
         skip_special_tokens=True,
     )[0]
 
-    # Parse into description + elements
+    # Retry with more tokens if output was truncated before [ELEMENTS]
+    if "[ELEMENTS]" not in output:
+        print("  ⚠️  Output truncated — retrying with more tokens...")
+        generated_ids = model.generate(**inputs, max_new_tokens=1500, do_sample=False)
+        output = processor.batch_decode(
+            generated_ids[:, inputs.input_ids.shape[1]:],
+            skip_special_tokens=True,
+        )[0]
+
     parts       = output.split("[ELEMENTS]")
     description = parts[0].replace("[DESCRIPTION]", "").strip()
     elements    = parts[1].strip() if len(parts) > 1 else ""
@@ -151,8 +239,25 @@ def analyze_ui(image_path: str, model, processor) -> dict:
 
 def save_ui_data(data: dict, out_dir: str = "outputs/ui_analysis"):
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"{data['screen_id']}.json")
-    with open(path, "w", encoding="utf-8") as f:
+    screen_id = data["screen_id"]
+
+    # Save .json
+    json_path = os.path.join(out_dir, f"{screen_id}.json")
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    print(f"  💾 UI data saved → {path}")
-    return path
+    print(f"  💾 UI data saved → {json_path}")
+
+    # Save .txt — full readable description
+    txt_path = os.path.join(out_dir, f"{screen_id}.txt")
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(f"Screen ID: {screen_id}\n")
+        f.write(f"Topic: {data.get('topic', 'unknown')}\n")
+        f.write("=" * 60 + "\n\n")
+        f.write("DESCRIPTION:\n")
+        f.write(data.get("description", "") + "\n\n")
+        f.write("=" * 60 + "\n\n")
+        f.write("STRUCTURED ELEMENTS:\n")
+        f.write(data.get("structured_elements", "") + "\n")
+    print(f"  💾 UI text saved  → {txt_path}")
+
+    return json_path, txt_path
