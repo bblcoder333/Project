@@ -2,7 +2,7 @@ import os
 import csv
 import traceback
 from stages.ui_analysis     import load_model, analyze_ui, save_ui_data
-from stages.test_generation import generate_test_cases, save_test_cases, append_to_master_csv
+from stages.test_generation import load_text_model, generate_test_cases, save_test_cases, append_to_master_csv
 
 IMAGES_DIR = "images/"
 TOPICS_CSV = "design_topics.csv"
@@ -20,16 +20,19 @@ if os.path.exists(TOPICS_CSV):
 else:
     print(f"⚠️  {TOPICS_CSV} not found — topics will be 'unknown'")
 
-
-# ─── Clear master CSV at start of each run ────────────────────────────────────
+# ─── Clear master CSV at start of each run ───────────────────────────────────
 master_path = "outputs/testcases_master.csv"
 if os.path.exists(master_path):
     os.remove(master_path)
     print("🗑️  Cleared master CSV — rebuilding fresh")
 
-# ─── Load shared model once ───────────────────────────────────────────────────
-print("\nLoading model...")
-model, processor = load_model()
+# ─── Load vision model once (Agent 1) ────────────────────────────────────────
+print("\nLoading vision model (Agent 1)...")
+vision_model, processor = load_model()
+
+# ─── Load text model once (Agent 2) ──────────────────────────────────────────
+print("\nLoading text model (Agent 2)...")
+text_model, text_tokenizer = load_text_model()
 
 # ─── Process every image ──────────────────────────────────────────────────────
 image_files = sorted([
@@ -51,14 +54,14 @@ for image_file in image_files:
     print(f"\n── Agent 1-4 Pipeline: {image_file} (topic: {topic}) ──")
 
     try:
-        # ── Agent 1 — Perception ─────────────────────────────────────────
-        ui_data          = analyze_ui(full_path, model, processor)
+        # ── Agent 1 — Perception (Vision Model) ──────────────────────────
+        ui_data          = analyze_ui(full_path, vision_model, processor)
         ui_data["topic"] = topic
         json_path, txt_path = save_ui_data(ui_data)
         print(f"✅ Agent 1 complete — UI data saved")
 
-        # ── Agent 2 — Test Case Generation ───────────────────────────────
-        tc_data              = generate_test_cases(ui_data, model, processor)
+        # ── Agent 2 — Test Case Generation (Text Model) ──────────────────
+        tc_data              = generate_test_cases(ui_data, text_model, text_tokenizer)
         tc_data["screen_id"] = screen_id
         tc_data["topic"]     = topic
         print(f"✅ Agent 2 (Generation) — {len(tc_data.get('test_cases', []))} test cases")
