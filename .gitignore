@@ -2,6 +2,5 @@ __pycache__/
 *.pyc
 rag_knowledge_base/
 outputs/
-images/
 .cache/
 .env

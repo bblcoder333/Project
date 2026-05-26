@@ -5,3 +5,4 @@ chromadb
 sentence-transformers
 Pillow
 matplotlib
+json-repair

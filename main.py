@@ -2,13 +2,7 @@ import os
 import csv
 import traceback
 from stages.ui_analysis     import load_model, analyze_ui, save_ui_data
-from stages.rag_setup       import setup_knowledge_base
-from stages.rag_retrieval   import retrieve_knowledge
 from stages.test_generation import generate_test_cases, save_test_cases, append_to_master_csv
-
-# Placeholders for Agents 3 and 4
-# from stages.metamorphic  import generate_metamorphic_cases
-# from stages.optimization import optimize_suite
 
 IMAGES_DIR = "images/"
 TOPICS_CSV = "design_topics.csv"
@@ -26,14 +20,16 @@ if os.path.exists(TOPICS_CSV):
 else:
     print(f"⚠️  {TOPICS_CSV} not found — topics will be 'unknown'")
 
+
+# ─── Clear master CSV at start of each run ────────────────────────────────────
+master_path = "outputs/testcases_master.csv"
+if os.path.exists(master_path):
+    os.remove(master_path)
+    print("🗑️  Cleared master CSV — rebuilding fresh")
+
 # ─── Load shared model once ───────────────────────────────────────────────────
 print("\nLoading model...")
 model, processor = load_model()
-tokenizer = processor.tokenizer
-
-# ─── Setup knowledge base once ────────────────────────────────────────────────
-print("\nSetting up knowledge base...")
-kb = setup_knowledge_base()
 
 # ─── Process every image ──────────────────────────────────────────────────────
 image_files = sorted([
@@ -48,7 +44,6 @@ for image_file in image_files:
     topic     = id_to_topic.get(screen_id, "unknown")
     out_path  = os.path.join("outputs/ui_analysis", f"{screen_id}.json")
 
-    # Skip if already processed
     #if os.path.exists(out_path):
         #print(f"⏭️  Skipping {image_file} — already processed")
         #continue
@@ -57,28 +52,21 @@ for image_file in image_files:
 
     try:
         # ── Agent 1 — Perception ─────────────────────────────────────────
-        ui_data         = analyze_ui(full_path, model, processor)
+        ui_data          = analyze_ui(full_path, model, processor)
         ui_data["topic"] = topic
         json_path, txt_path = save_ui_data(ui_data)
         print(f"✅ Agent 1 complete — UI data saved")
 
-        # ── Agent 2 — RAG Retrieval ───────────────────────────────────────
-        print("🔍 Retrieving knowledge...")
-        retrieved_chunks = retrieve_knowledge(ui_data, kb)
-        print(f"✅ Agent 2 (RAG) — {len(retrieved_chunks)} chunks retrieved")
-
         # ── Agent 2 — Test Case Generation ───────────────────────────────
-        tc_data              = generate_test_cases(ui_data, retrieved_chunks, model, tokenizer)
+        tc_data              = generate_test_cases(ui_data, model, processor)
         tc_data["screen_id"] = screen_id
         tc_data["topic"]     = topic
         print(f"✅ Agent 2 (Generation) — {len(tc_data.get('test_cases', []))} test cases")
 
         # ── Agent 3 — Metamorphic Testing (placeholder) ───────────────────
-        # tc_data = generate_metamorphic_cases(tc_data)
         print("⚠️  Agent 3 — Metamorphic testing (coming next)")
 
         # ── Agent 4 — Optimization (placeholder) ─────────────────────────
-        # tc_data = optimize_suite(tc_data)
         print("⚠️  Agent 4 — Optimization (coming next)")
 
         # ── Final Save ────────────────────────────────────────────────────

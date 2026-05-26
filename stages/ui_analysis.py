@@ -102,7 +102,6 @@ def analyze_ui(image_path: str, model, processor) -> dict:
     return {
         "screen_id": screen_id,
         "description": output.strip(),
-        "structured_elements": "",
     }
 
 def save_ui_data(data: dict, out_dir: str = "outputs/ui_analysis"):
