@@ -6,142 +6,119 @@ import torch
 from json_repair import repair_json
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-
 TESTCASE_PROMPT_TEMPLATE = """
-You are a senior QA engineer specializing in mobile applications.
+You are a senior QA engineer for mobile apps.
 
-Generate ONLY high-value manual test cases from the given mobile screen description.
+Generate high-value manual test cases ONLY from explicitly described UI elements.
 
-The input is a SCREEN DESCRIPTION extracted from a screenshot. It contains UI elements and accessibility observations.
-
-Your task is to generate realistic behavioral test cases based ONLY on explicitly described UI elements.
+The input is a screen description containing UI elements and accessibility observations.
 
 ---
 
-## STEP 1 — SCREEN SCAN (UI ONLY)
+## STEP 1 — EXTRACT UI ELEMENTS
 
-Extract ONLY visible and interactive UI elements.
+Extract only explicitly mentioned items:
 
-INTERACTIVE_ELEMENTS:
-- Each clickable element explicitly named (buttons, icons, FABs)
-
-NAVIGATIONAL_ELEMENTS:
-- menu icon, back icon (ONLY if explicitly mentioned)
-
-SCROLLABLE_ELEMENTS:
-- lists or scrollable sections (ONLY if explicitly described as list/scrollable)
-
-INFORMATIONAL_ELEMENTS:
-- labels, cards, images, maps, static text, ads (NOT interactive)
-
-INPUT_FIELDS:
-- each input field explicitly named (age, waist, height, etc.)
-
-SELECTORS:
-- tabs, toggles, dropdowns, unit/gender selectors
-
-STRICT RULES:
-- DO NOT group elements (each icon/button is separate)
-- DO NOT invent UI elements
-- DO NOT treat informational elements as interactive
-- ADS MUST NEVER be tested
-
-The SCREEN SCAN is STRICTLY BINDING.
-Every element listed MUST appear in at least one test case.
-
----
-
-## STEP 1.5 — ACCESSIBILITY OBSERVATIONS (NOT UI ELEMENTS)
-
-Extract accessibility-related information separately:
-
-ACCESSIBILITY_OBSERVATIONS:
-- font size notes
-- color contrast notes
-- touch target size notes
-- readability notes
-- icon distinguishability notes
-
-IMPORTANT RULES:
-- Accessibility observations are NOT UI elements
-- They MUST NOT be tapped, scrolled, or interacted with
-- They are ONLY used to create accessibility test cases
-
----
-
-## STEP 2 — COVERAGE REQUIREMENT (MANDATORY)
-
-You MUST ensure full coverage:
-
-- Every INTERACTIVE element → at least 1 test case
-- Every INPUT_FIELD → at least 1 test case
-- Every SELECTOR → at least 1 test case
-- Every NAVIGATIONAL element → at least 1 test case
-- Every SCROLLABLE element → at least 1 test case (if explicitly scrollable)
-- Accessibility_observations → MUST produce exactly 1 accessibility test case
-
-DO NOT stop until full coverage is achieved.
-
----
-
-## STEP 3 — TEST GENERATION RULES
-
-Generate test cases by iterating through each scanned element.
+INTERACTIVE_ELEMENTS: clickable UI (buttons, icons, FAB)
+NAVIGATIONAL_ELEMENTS: menu/back icons
+INPUT_FIELDS: text inputs (age, waist, height, etc.)
+SELECTORS: tabs, toggles, dropdowns, unit/gender selectors
+SCROLLABLE_ELEMENTS: lists or scrollable sections (only if stated)
+INFORMATIONAL_ELEMENTS: labels, cards, maps, static text, ads (not interactive)
 
 Rules:
-- One UI element → at least one test case
-- Do NOT skip any UI element
-- Do NOT assume hidden functionality
-- Do NOT generate tests for informational elements
-- Always include EXACTLY ONE accessibility test derived from ACCESSIBILITY_OBSERVATIONS
+- Do NOT invent elements
+- Do NOT group elements
+- Only listed items are valid test targets
+- Ads must NOT be tested
 
-Allowed actions:
-- Tap
-- Enter
-- Select
-- Scroll
-- Swipe
+## ICON DETECTION RULE
+- Brand/social icons (Facebook, LinkedIn, Google+, Twitter etc.) are ALWAYS interactive
+- Profile cards with a name and image are ALWAYS tappable
+- Maps with location pins are ALWAYS tappable
+- These must appear in INTERACTIVE_ELEMENTS even if not explicitly labeled "clickable"
 
 ---
 
-## FAB RULE
+## STEP 2 — ACCESSIBILITY
 
-If a Floating Action Button exists:
+ACCESSIBILITY_OBSERVATIONS include:
+- font size
+- contrast
+- readability
+- touch target size
 
-- Only describe immediate visible UI change
-- Do NOT assume backend or data persistence
+Rules:
+- Not interactive UI
+- Used only for ONE accessibility test case
 
-GOOD:
-"A new screen or dialog for adding a learner is presented"
+---
 
-BAD:
-"New learner is successfully added"
+## STEP 3 — COVERAGE RULES
+
+Generate test cases ensuring full coverage:
+
+- Each INTERACTIVE element → at least 1 test
+- Each INPUT_FIELD → at least 1 test
+- Each SELECTOR → at least 1 test
+- Each NAVIGATIONAL element → at least 1 test
+- Each SCROLLABLE element → at least 1 test
+- Exactly 1 accessibility test from observations
+
+Do not skip any element.
+
+---
+
+## STEP 4 — TEST RULES
+
+Allowed actions:
+Tap, Enter, Select, Scroll, Swipe
+
+Rules:
+- One element = one test minimum
+- No backend assumptions
+- No hidden functionality assumptions
+- Do not test informational elements
+
+FAB rule:
+- Only describe immediate UI change after tap
+- Expected result: "A new screen or dialog is presented"
+- Do NOT say "new entry is successfully added"
+
+TOGGLE / UNIT SWITCH RULE:
+- A unit switch is ONE button that alternates between states
+- Test as: Step 1: Tap the unit switch button. Step 2: Observe the units change.
+- Do NOT assume two separate buttons exist
+- Do NOT write two steps for a single toggle
 
 ---
 
 ## EXPECTED RESULT RULES
 
-Each expected result must describe:
-- what changed
-- which UI element changed
+Must describe observable UI change only.
 
-BAD:
-- "Screen displayed"
+Bad:
 - "Works correctly"
-- "Opened successfully"
+- "Screen displayed"
+- "All learners are visible as the user scrolls"
 
-GOOD:
-- "The TOTAL tab becomes highlighted and leaderboard updates"
-- "Entered value remains visible in the waist input field"
+Good:
+- "TOTAL tab becomes highlighted and leaderboard updates to show overall rankings"
+- "Entered value remains visible in the Age input field"
+- "Additional learner entries below the currently visible list become visible"
+
+For scroll tests:
+- Describe what NEW content appears not just that scrolling works
+- Good: "Additional learner entries below rank 5 become visible"
+- Bad: "All learners are visible as the user scrolls"
 
 ---
 
 ## PRIORITY RULES
 
 - P1 → primary CTA / core action
-- P2 → navigation / important interaction
-- P3 → secondary interaction
-- P4 → accessibility test
+- P2 → navigation / important interaction / accessibility
+- P3 → secondary interactions
 
 ---
 
@@ -179,17 +156,12 @@ Return ONLY valid JSON. No markdown. No commentary.
   ]
 }}
 
----
-
-## FINAL CHECK (MANDATORY)
-
-Before returning:
-
-- Every UI element has at least one test case
-- Accessibility observations are used in exactly one accessibility test
-- No hallucinated UI elements exist
-- No informational elements are tested interactively
-- Output is complete and not truncated
+Ensure:
+- No hallucinated UI elements
+- Full coverage of extracted elements
+- Exactly one accessibility test
+- No informational element interactions
+- No duplicate test cases
 
 Screen ID: {screen_id}
 Topic: {topic}
