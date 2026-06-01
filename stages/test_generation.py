@@ -8,160 +8,110 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 TESTCASE_PROMPT_TEMPLATE = """
 You are a senior QA engineer for mobile apps.
-
-Generate high-value manual test cases ONLY from explicitly described UI elements.
-
-The input is a screen description containing UI elements and accessibility observations.
+Generate manual test cases from the screen description below.
 
 ---
 
-## STEP 1 — EXTRACT UI ELEMENTS
+## RULE 1: EXTRACT ONLY WHAT EXISTS
+Before writing tests, extract ONLY these elements explicitly shown in the description:
+- INTERACTIVE: buttons, icons, FABs, tabs, toggles
+- INPUTS: text fields
+- SCROLLABLE: lists or scrollable sections
+- ACCESSIBILITY: font sizes, contrast notes
 
-Extract only explicitly mentioned items:
-
-INTERACTIVE_ELEMENTS: clickable UI (buttons, icons, FAB)
-NAVIGATIONAL_ELEMENTS: menu/back icons
-INPUT_FIELDS: text inputs (age, waist, height, etc.)
-SELECTORS: tabs, toggles, dropdowns, unit/gender selectors
-SCROLLABLE_ELEMENTS: lists or scrollable sections (only if stated)
-INFORMATIONAL_ELEMENTS: labels, cards, maps, static text, ads (not interactive)
-
-Rules:
-- Do NOT invent elements
-- Do NOT group elements
-- Only listed items are valid test targets
-- Ads must NOT be tested
-
-## ICON DETECTION RULE
-- Brand/social icons (Facebook, LinkedIn, Google+, Twitter etc.) are ALWAYS interactive
-- Profile cards with a name and image are ALWAYS tappable
-- Maps with location pins are ALWAYS tappable
-- These must appear in INTERACTIVE_ELEMENTS even if not explicitly labeled "clickable"
+Do NOT invent elements. Do NOT test static labels, ads, or images.
 
 ---
 
-## STEP 2 — ACCESSIBILITY
+## RULE 2: HALLUCINATION GUARD
+Before writing ANY test:
+1. Point to the exact sentence in the description that mentions this element
+2. If you cannot find it → DO NOT WRITE A TEST FOR IT
 
-ACCESSIBILITY_OBSERVATIONS include:
-- font size
-- contrast
-- readability
-- touch target size
+Forbidden without explicit mention:
+- Calculate buttons
+- Search fields
+- Social media icons (unless shown)
+- Input fields (unless shown)
+- Unit toggles (unless shown)
 
-Rules:
-- Not interactive UI
-- Used only for ONE accessibility test case
-
----
-
-## STEP 3 — COVERAGE RULES
-
-Generate test cases ensuring full coverage:
-
-- Each INTERACTIVE element → at least 1 test
-- Each INPUT_FIELD → at least 1 test
-- Each SELECTOR → at least 1 test
-- Each NAVIGATIONAL element → at least 1 test
-- Each SCROLLABLE element → at least 1 test
-- Exactly 1 accessibility test from observations
-
-Do not skip any element.
+If it is not in the description → it does not exist.
 
 ---
 
-## STEP 4 — TEST RULES
+## RULE 3: NO OBSERVATION-ONLY TESTS
+Every test MUST have at least one action: Tap, Enter, Scroll, or Select.
 
-Allowed actions:
-Tap, Enter, Select, Scroll, Swipe
+FORBIDDEN:
+- "Step 1: Observe the button"
+- "Step 1: Verify the text is visible"
 
-Rules:
-- One element = one test minimum
-- No backend assumptions
-- No hidden functionality assumptions
-- Do not test informational elements
+REQUIRED:
+- "Step 1: Tap the button"
+- "Step 1: Enter '25' into the field"
 
-FAB rule:
-- Only describe immediate UI change after tap
-- Expected result: "A new screen or dialog is presented"
-- Do NOT say "new entry is successfully added"
-
-TOGGLE / UNIT SWITCH RULE:
-- A unit switch is ONE button that alternates between states
-- Test as: Step 1: Tap the unit switch button. Step 2: Observe the units change.
-- Do NOT assume two separate buttons exist
-- Do NOT write two steps for a single toggle
+Exception: Accessibility tests may use "Verify" steps.
 
 ---
 
-## EXPECTED RESULT RULES
-
-Must describe observable UI change only.
-
-Bad:
-- "Works correctly"
-- "Screen displayed"
-- "All learners are visible as the user scrolls"
-
-Good:
-- "TOTAL tab becomes highlighted and leaderboard updates to show overall rankings"
-- "Entered value remains visible in the Age input field"
-- "Additional learner entries below the currently visible list become visible"
-
-For scroll tests:
-- Describe what NEW content appears not just that scrolling works
-- Good: "Additional learner entries below rank 5 become visible"
-- Bad: "All learners are visible as the user scrolls"
+## RULE 4: COVERAGE
+- Every INTERACTIVE element → 1 test minimum
+- Every INPUT field → 2 tests (valid input + empty/invalid)
+- Every TAB or TOGGLE → 1 test per state
+- Every SCROLLABLE section → 1 test
+- Exactly 1 accessibility test (not multiple)
 
 ---
 
-## PRIORITY RULES
+## RULE 5: SPECIFIC EXPECTED RESULTS
+Use exact labels, values, and names from the description.
 
-- P1 → primary CTA / core action
-- P2 → navigation / important interaction / accessibility
-- P3 → secondary interactions
+WRONG: "The button works"
+RIGHT: "The 'Get Started' button navigates to a new screen"
+
+WRONG: "The field accepts input"
+RIGHT: "'25' remains visible in the Age field"
+
+WRONG: "More items appear"
+RIGHT: "Entries below rank 5 become visible"
 
 ---
 
-## OUTPUT FORMAT
+## RULE 6: SOCIAL ICON RULE (IF PRESENT)
+Each social media icon = ONE separate test case.
+Never combine into one test.
+Facebook → "The Facebook app or facebook.com opens"
+LinkedIn → "The LinkedIn app or linkedin.com opens"
+Google+ → "The Google+ app or google.com/+ opens"
 
-Return ONLY valid JSON. No markdown. No commentary.
+---
+
+## RULE 7: TOGGLE RULE (IF PRESENT)
+A toggle button is ONE action, not multiple.
+FORBIDDEN: "Step 1: Tap CM|KG. Step 2: Tap CM"
+REQUIRED: "Step 1: Tap the 'CM | KG' button"
+
+---
+
+## OUTPUT
+Return ONLY valid JSON, no markdown.
 
 {{
-  "module": "<module name>",
-  "screen_id": "<screen id>",
-  "element_scan": {{
-    "interactive_elements": [],
-    "navigational_elements": [],
-    "scrollable_elements": [],
-    "informational_elements": [],
-    "input_fields": [],
-    "selectors": [],
-    "accessibility_observations": []
-  }},
+  "module": "",
+  "screen_id": "",
   "test_cases": [
     {{
-      "test_case_id": "TC_{screen_id}_001",
+      "test_case_id": "TC_{{screen_id}}_001",
       "title": "",
-      "priority": "P1",
+      "priority": "P1|P2|P3",
       "type": "Functional|Accessibility|Negative",
       "preconditions": [""],
       "test_data": [""],
-      "steps": [
-        "Step 1: ..."
-      ],
-      "expected": [
-        "Specific observable UI change"
-      ]
+      "steps": ["Step 1: ..."],
+      "expected": [""]
     }}
   ]
 }}
-
-Ensure:
-- No hallucinated UI elements
-- Full coverage of extracted elements
-- Exactly one accessibility test
-- No informational element interactions
-- No duplicate test cases
 
 Screen ID: {screen_id}
 Topic: {topic}
@@ -188,21 +138,24 @@ CSV_COLUMNS = [
 
 
 def load_text_model():
-    model_id  = "Qwen/Qwen2.5-7B-Instruct"
+    model_id = "Qwen/Qwen2.5-7B-Instruct"
+    
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model     = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
         attn_implementation="sdpa",
         device_map="auto",
     )
-    print(f"✅ Text model loaded — {model_id}")
+    
+    print(f"✅ Qwen 7B model loaded")
     return model, tokenizer
 
 
 def deduplicate_test_cases(test_cases: list) -> list:
+    """Remove duplicate test cases based on steps."""
     seen_steps = set()
-    unique     = []
+    unique = []
     for tc in test_cases:
         steps_key = " | ".join(tc.get("steps", []))
         if steps_key not in seen_steps:
@@ -210,17 +163,41 @@ def deduplicate_test_cases(test_cases: list) -> list:
             unique.append(tc)
     return unique
 
+def light_post_process(test_cases: list) -> list:
+    """
+    Light post-processing for Qwen 7B.
+    Removes obvious hallucinations.
+    """
+    
+    hallucinated_patterns = [
+        "Tap the 'Calculate' button",
+        "search field",
+    ]
+    
+    filtered = []
+    for tc in test_cases:
+        steps_text = " ".join(tc.get("steps", []))
+        is_hallucinated = any(pattern in steps_text for pattern in hallucinated_patterns)
+        
+        if not is_hallucinated:
+            filtered.append(tc)
+    
+    return filtered
 
 def generate_test_cases(ui_data: dict, model, tokenizer) -> dict:
+    """Generate test cases using Qwen 7B."""
     prompt = TESTCASE_PROMPT_TEMPLATE.format(
-        screen_id   = ui_data.get("screen_id", "unknown"),
-        topic       = ui_data.get("topic", "unknown"),
-        description = ui_data.get("description", ""),
+        screen_id=ui_data.get("screen_id", "unknown"),
+        topic=ui_data.get("topic", "unknown"),
+        description=ui_data.get("description", ""),
     )
 
     messages = [
-        {"role": "system", "content": "You are a helpful QA assistant that strictly outputs valid JSON."},
-        {"role": "user",   "content": prompt}
+        {
+            "role": "system",
+            "content": "You are a helpful QA assistant that strictly outputs valid JSON with no markdown."
+        },
+        {"role": "user", "content": prompt}
     ]
 
     text = tokenizer.apply_chat_template(
@@ -234,11 +211,14 @@ def generate_test_cases(ui_data: dict, model, tokenizer) -> dict:
         max_length=4096,
     ).to("cuda")
 
+    print(f"   🔄 Generating test cases (Qwen 7B)...")
+    
     with torch.no_grad():
         ids = model.generate(
             **inputs,
-            max_new_tokens=3000,
+            max_new_tokens=4000,
             do_sample=False,
+            top_p=1.0,
             repetition_penalty=1.05,
             pad_token_id=tokenizer.eos_token_id,
         )
@@ -250,36 +230,44 @@ def generate_test_cases(ui_data: dict, model, tokenizer) -> dict:
     try:
         blocks = re.findall(r'\{.*\}', raw, re.DOTALL)
         if not blocks:
-            print(f"⚠️  No JSON block found. Raw output preview:\n{raw[:300]}")
+            print(f"   ⚠️  No JSON block found")
             return {"test_cases": []}
 
         candidate = max(blocks, key=len)
-        repaired  = repair_json(candidate)
-        result    = json.loads(repaired)
+        repaired = repair_json(candidate)
+        result = json.loads(repaired)
 
         result["test_cases"] = deduplicate_test_cases(result.get("test_cases", []))
+        result["test_cases"] = light_post_process(result["test_cases"])
+        
+        print(f"   ✅ Generated {len(result['test_cases'])} test cases")
         return result
 
     except Exception as e:
-        print(f"❌ JSON parse failed: {e}")
-        print(f"⚠️  Raw output preview:\n{raw[:300]}")
+        print(f"   ❌ JSON parse failed: {e}")
         return {"test_cases": []}
 
 
 def _safe_join(val):
+    """Join list values with comma separator for CSV."""
     if not val:
         return ""
-    return " | ".join(
+    # If it's already a string, return as-is
+    if isinstance(val, str):
+        return val
+    # Otherwise join list elements
+    return ", ".join(
         str(v) if not isinstance(v, dict) else json.dumps(v)
         for v in val
     )
 
 
 def save_test_cases(data: dict, out_dir: str = "outputs/testcases"):
+    """Save test cases to individual CSV file per screen."""
     os.makedirs(out_dir, exist_ok=True)
-    screen_id  = data.get("screen_id", "unknown")
-    topic      = data.get("topic", "unknown")
-    module     = (data.get("module") or topic or "unknown").strip()
+    screen_id = data.get("screen_id", "unknown")
+    topic = data.get("topic", "unknown")
+    module = (data.get("module") or topic or "unknown").strip()
     test_cases = data.get("test_cases", [])
 
     out_path = os.path.join(out_dir, f"{screen_id}.csv")
@@ -292,16 +280,16 @@ def save_test_cases(data: dict, out_dir: str = "outputs/testcases"):
         w.writeheader()
         for tc in test_cases:
             w.writerow({
-                "test_case_id":    tc.get("test_case_id", ""),
-                "title":           tc.get("title", ""),
-                "module":          module,
-                "screen_id":       screen_id,
-                "topic":           topic,
-                "priority":        tc.get("priority", ""),
-                "type":            tc.get("type", ""),
-                "preconditions":   _safe_join(tc.get("preconditions", [])),
-                "test_data":       _safe_join(tc.get("test_data", [])),
-                "test_steps":      _safe_join(tc.get("steps", [])),
+                "test_case_id": tc.get("test_case_id", ""),
+                "title": tc.get("title", ""),
+                "module": module,
+                "screen_id": screen_id,
+                "topic": topic,
+                "priority": tc.get("priority", ""),
+                "type": tc.get("type", ""),
+                "preconditions": _safe_join(tc.get("preconditions", [])),
+                "test_data": _safe_join(tc.get("test_data", [])),
+                "test_steps": _safe_join(tc.get("steps", [])),
                 "expected_result": _safe_join(tc.get("expected", [])),
             })
 
@@ -311,10 +299,11 @@ def save_test_cases(data: dict, out_dir: str = "outputs/testcases"):
 
 def append_to_master_csv(data: dict,
                          master_path: str = "outputs/testcases_master.csv"):
+    """Append test cases to master CSV file."""
     os.makedirs(os.path.dirname(master_path), exist_ok=True)
-    screen_id  = data.get("screen_id", "unknown")
-    topic      = data.get("topic", "unknown")
-    module     = (data.get("module") or topic or "unknown").strip()
+    screen_id = data.get("screen_id", "unknown")
+    topic = data.get("topic", "unknown")
+    module = (data.get("module") or topic or "unknown").strip()
     test_cases = data.get("test_cases", [])
 
     exists = os.path.exists(master_path)
@@ -324,16 +313,16 @@ def append_to_master_csv(data: dict,
             w.writeheader()
         for tc in test_cases:
             w.writerow({
-                "test_case_id":    tc.get("test_case_id", ""),
-                "title":           tc.get("title", ""),
-                "module":          module,
-                "screen_id":       screen_id,
-                "topic":           topic,
-                "priority":        tc.get("priority", ""),
-                "type":            tc.get("type", ""),
-                "preconditions":   _safe_join(tc.get("preconditions", [])),
-                "test_data":       _safe_join(tc.get("test_data", [])),
-                "test_steps":      _safe_join(tc.get("steps", [])),
+                "test_case_id": tc.get("test_case_id", ""),
+                "title": tc.get("title", ""),
+                "module": module,
+                "screen_id": screen_id,
+                "topic": topic,
+                "priority": tc.get("priority", ""),
+                "type": tc.get("type", ""),
+                "preconditions": _safe_join(tc.get("preconditions", [])),
+                "test_data": _safe_join(tc.get("test_data", [])),
+                "test_steps": _safe_join(tc.get("steps", [])),
                 "expected_result": _safe_join(tc.get("expected", [])),
             })
 
