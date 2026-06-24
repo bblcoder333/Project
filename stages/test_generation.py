@@ -9,73 +9,56 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 TESTCASE_PROMPT_TEMPLATE = """
 You are a senior QA engineer for mobile apps.
 Generate manual test cases from the screen description below.
----
-## EXTRACT FIRST
-Before writing tests, list:
-- INTERACTIVE: buttons, icons, FABs, brand icons (Facebook/LinkedIn/Google+ are ALWAYS interactive — one test each)
-- INPUTS: text fields — note any default values visible on screen
-- SELECTORS: tabs, toggles, unit switches — list every distinct state and its label
-- SCROLLABLE: named scrollable lists — note any visible items by name
-- ACCESSIBILITY: font sizes, contrast notes, flagged issues
-
-Do not invent elements. Do not test ads or static labels.
 
 ---
 
-## HALLUCINATION GUARD
-Before writing each test, ask: "Is this element explicitly mentioned
-in the screen description?" If no → do not test it.
-Specifically: do NOT invent search fields, calculate buttons, or
-tappable list rows unless the description says they exist.
+## RULE 1: EXTRACT ONLY WHAT EXISTS
+Before writing tests, extract ONLY these elements explicitly shown in the description:
+- INTERACTIVE: buttons, icons, FABs, tabs, toggles
+- INPUTS: text fields
+- SCROLLABLE: lists or scrollable sections
+- ACCESSIBILITY: font sizes, contrast notes
+
+Do NOT invent elements. Do NOT test static labels, ads, or images.
 
 ---
 
-## OBSERVATION TESTS ARE BANNED
-Never write a test whose only step is "Observe X" or "Look at X".
-Every test must have at least one Tap, Enter, Scroll, or Select action.
-Static elements (maps, labels, profile cards, placeholder text)
-are INFORMATIONAL — do not write tests for them.
+## RULE 2: HALLUCINATION GUARD
+Before writing ANY test:
+1. Point to the exact sentence in the description that mentions this element
+2. If you cannot find it → DO NOT WRITE A TEST FOR IT
+
+Forbidden without explicit mention:
+- Calculate buttons
+- Search fields
+- Social media icons (unless shown)
+- Input fields (unless shown)
+- Unit toggles (unless shown)
+
+If it is not in the description → it does not exist.
 
 ---
 
-## SPECIFICITY RULE — CRITICAL
-Every test case must use ACTUAL values, labels, and names from the screen description.
+## RULE 3: NO OBSERVATION-ONLY TESTS
+Every test MUST have at least one action: Tap, Enter, Scroll, or Select.
 
-WRONG — generic:
-- steps: ["Enter a valid age value"]
-- expected: ["The value is displayed in the input field"]
+FORBIDDEN:
+- "Step 1: Observe the button"
+- "Step 1: Verify the text is visible"
 
-RIGHT — screen-specific:
-- steps: ["Step 1: Enter '26' into the Age input field"]
-- expected: ["'26' remains visible in the Age input field"]
+REQUIRED:
+- "Step 1: Tap the button"
+- "Step 1: Enter '25' into the field"
 
-WRONG — generic:
-- expected: ["The leaderboard updates"]
-
-RIGHT — screen-specific:
-- expected: ["The 'THIS COURSE' tab becomes highlighted and the learner list updates to show only course-specific entries"]
-
-WRONG — generic:
-- expected: ["The accessibility requirements are met"]
-
-RIGHT — screen-specific:
-- expected: ["Title text (~24sp, bold) and body text (~16sp, regular) have sufficient contrast against the light blue to white gradient background"]
-
-Rules:
-- Use exact button labels from the description (e.g. 'CM | KG' not 'unit button')
-- Use exact tab names (e.g. 'THIS COURSE' not 'first tab')
-- Use exact learner names if visible (e.g. 'Nikolay Nachev' not 'a learner')
-- Use exact input field names (e.g. 'Age', 'Waist', 'Height' not 'input field')
-- Use exact category names if visible (e.g. 'UnderWeight', 'Normal', 'OverWeight')
-- Use exact font sizes and colors from the accessibility section of the description
+Exception: Accessibility tests may use "Verify" steps.
 
 ---
 
-## COVERAGE
-- Every INTERACTIVE element → 1 test
-- Every INPUT → 2 tests: one valid input with real value, one empty/invalid
-- Every SELECTOR STATE → 1 test (e.g. CM|KG and IN|LB = 2 tests)
-- Every SCROLLABLE list → 1 test
+## RULE 4: COVERAGE
+- Every INTERACTIVE element → 1 test minimum
+- Every INPUT field → 2 tests (valid input + empty/invalid)
+- Every TAB or TOGGLE → 1 test per state
+- Every SCROLLABLE section → 1 test
 - Accessibility tests: Generate accessibility test cases covering ALL observations from the description. Each test case must have multiple Verify steps (not just one). Group by category:
   - Font sizes: Verify each text element's sp value
   - Font weight/family: Verify each element's weight and typeface
@@ -86,19 +69,53 @@ Rules:
 
 ---
 
-## WRITING RULES
-Steps: use Tap / Enter / Scroll / Select only.
+## RULE 5: SPECIFIC EXPECTED RESULTS
+Use exact labels, values, and names from the description.
 
-Expected results MUST:
-- Name the specific label or element (e.g. "'IN | LB' button becomes active")
-- Describe the visible UI change using exact screen values
-- Reference real on-screen values (e.g. "rank 1 Nikolay Nachev 56876 XP")
-- NEVER say "works correctly", "screen displayed", or "updates successfully"
+WRONG: "The button works"
+RIGHT: "The 'Get Started' button navigates to a new screen"
 
-FAB/CTA: expected result = "A new screen or dialog is presented"
-Scroll: name what new content appears (e.g. "entries below rank 5 including ashwinj 5 XP become visible")
-Social icons: name the platform (e.g. "LinkedIn app or linkedin.com opens")
-Priority: P1 = core action, P2 = navigation/secondary, P3 = edge cases/scroll
+WRONG: "The field accepts input"
+RIGHT: "'25' remains visible in the Age field"
+
+WRONG: "More items appear"
+RIGHT: "Entries below rank 5 become visible"
+
+---
+
+## RULE 6: SOCIAL ICON RULE (IF PRESENT)
+Each social media icon = ONE separate test case.
+Never combine into one test.
+Facebook → "The Facebook app or facebook.com opens"
+LinkedIn → "The LinkedIn app or linkedin.com opens"
+Google+ → "The Google+ app or google.com/+ opens"
+
+---
+
+## RULE 7: TOGGLE RULE (IF PRESENT)
+A toggle button is ONE action, not multiple.
+FORBIDDEN: "Step 1: Tap CM|KG. Step 2: Tap CM"
+REQUIRED: "Step 1: Tap the 'CM | KG' button"
+
+---
+
+## RULE 8: TEST DATA MUST BE STRUCTURED
+For every test case that uses input fields, the test_data field MUST be populated
+with structured key-value pairs using the EXACT field names and values from the description.
+
+FORMAT: "FieldName: value | FieldName: value"
+
+WRONG: ["enter waist value"]
+WRONG: [""]
+RIGHT: ["Waist: 100 cm | Height: 170 cm | Age: 26"]
+
+Rules:
+- Use the exact field name as shown in the description (e.g. "Waist", "Age", "Height")
+- Include the unit if shown (cm, kg, lb, feet)
+- For valid input tests: use the value shown in the description or a realistic positive value
+- For invalid/negative tests: use the invalid value (e.g. "Waist: -1 cm")
+- For toggle/unit tests: use "Unit: CM | KG" or "Unit: IN | LB"
+- If the screen has NO input fields, test_data may be empty
 
 ---
 
@@ -227,7 +244,6 @@ def generate_test_cases(ui_data: dict, model, tokenizer) -> dict:
             **inputs,
             max_new_tokens=4000,
             do_sample=False,
-            temperature=1.0,
             top_p=1.0,
             repetition_penalty=1.05,
             pad_token_id=tokenizer.eos_token_id,
