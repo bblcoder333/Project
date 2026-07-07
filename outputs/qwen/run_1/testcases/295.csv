@@ -1,0 +1,14 @@
+test_case_id,title,module,screen_id,topic,priority,type,preconditions,test_data,test_steps,expected_result
+TC_295_001,Tap 'THIS COURSE' tab,Leaderboard,295,list,P1,Functional,,,Step 1: Tap the 'THIS COURSE' tab,The 'THIS COURSE' section becomes active and displays the top learners for the current course
+TC_295_002,Tap 'TOTAL' tab,Leaderboard,295,list,P1,Functional,,,Step 1: Tap the 'TOTAL' tab,The 'TOTAL' section becomes active and displays the overall leaderboard
+TC_295_003,Tap CTA button in the footer,Leaderboard,295,list,P1,Functional,,,Step 1: Tap the CTA button in the footer,The CTA button navigates to a new screen or performs the intended action
+TC_295_004,Tap the floating action button in the footer,Leaderboard,295,list,P1,Functional,,,Step 1: Tap the floating action button in the footer,The floating action button navigates to a new screen or performs the intended action
+TC_295_005,Verify the background color,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the background color is a gradient of light blue at the top and white below,The background color matches the described gradient
+TC_295_006,Verify the font size for titles,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the font size for titles is approximately 24sp,The font size for titles is approximately 24sp
+TC_295_007,Verify the font size for body text,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the font size for body text is around 16sp,The font size for body text is around 16sp
+TC_295_008,Verify the font size for captions,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the font size for captions is around 12sp,The font size for captions is around 12sp
+TC_295_009,Verify the font family is sans-serif,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the font family is a sans-serif font,The font family is a sans-serif font
+TC_295_010,Verify the font weight is regular,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the font weight is regular,The font weight is regular
+TC_295_011,Verify the contrast between text and background,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the contrast between text and background is high,The contrast between text and background meets the WCAG AA standard (≥4.5:1)
+TC_295_012,Verify the touch target size for the CTA button,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the touch target size for the CTA button is at least 44x44px,The touch target size for the CTA button is at least 44x44px
+TC_295_013,Verify the touch target size for the floating action button,Leaderboard,295,list,P2,Accessibility,,,Step 1: Verify the touch target size for the floating action button is at least 44x44px,The touch target size for the floating action button is at least 44x44px

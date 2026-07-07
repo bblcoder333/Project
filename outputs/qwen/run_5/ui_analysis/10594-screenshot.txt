@@ -1,0 +1,43 @@
+Screen ID: 10594-screenshot
+============================================================
+
+A) Screen purpose and type:
+This is a mobile app screenshot for a contact identification and search application. The screen is designed to help users search for contact information and identify the location of a caller.
+
+B) Layout top to bottom:
+1. The top of the screen features the app's logo, "Sync.me," centered at the top.
+2. Below the logo, there is a search bar with a placeholder text that reads "Search any number worldwide and identify the caller info."
+3. In the middle of the screen, there is a map of North America with a red pin marking a location. Below the map, there is a user profile card with a circular profile picture, a name "Jennifer," and a subtitle "Top model."
+4. Below the profile card, there are social media icons for Facebook, LinkedIn, and Google+.
+5. At the bottom of the screen, there is a blue CTA button labeled "GET STARTED."
+
+C) Component inventory (grouped):
+1. App bar with the app logo and search bar.
+2. Map with a location pin.
+3. User profile card with a profile picture, name, and social media icons.
+4. CTA button for getting started.
+
+D) Visual design (colors, typography, background):
+1. The background color is white.
+2. The app bar and search bar use a light blue color.
+3. The map and location pin use a green color.
+4. The user profile card and social media icons use a blue color.
+5. The CTA button is blue with white text.
+
+E) Accessibility observations:
+1. The text in the search bar is readable and has good contrast.
+2. The social media icons are easily distinguishable.
+3. The CTA button is clearly labeled and has good contrast.
+
+F) Primary actions + navigation:
+1. The primary action is to search for contact information by using the search bar.
+2. The navigation is straightforward, with a clear CTA button for getting started.
+
+Recap:
+- Screen type/purpose: Contact identification and search application.
+- Key components: App bar, search bar, map, user profile card, social media icons, CTA button.
+- Primary CTA(s): GET STARTED button.
+- Navigation/footer: None.
+- Dominant colors: White, light blue, green, blue.
+- Typography: Roboto, regular, font size range: heading ~24sp, body ~16sp, caption ~12sp.
+- Accessibility flags: None.

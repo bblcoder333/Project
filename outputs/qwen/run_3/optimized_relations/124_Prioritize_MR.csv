@@ -1,0 +1,10 @@
+mr_id,source_tc_id,screen_id,topic,mr_category,transformation,expected_relation,decision,reason
+MR-01,TC_124_003,124,list,VALIDATION_CONSISTENCY,Change invalid value from -1 to -5,Same validation error should appear as with the original invalid value,keep,Core validation behavior — ensure consistent error messages
+MR-02,TC_124_004,124,list,INVARIANCE,Switch unit from CM | KG to IN | LB,Computed ratio remains approximately the same after unit conversion,keep,Critical for ensuring unit independence in calculations
+MR-03,TC_124_006,124,list,MONOTONICITY,Increase Waist from 6 to 26,Computed ratio should be greater than with Waist=6,keep,Core mathematical behavior — waist increase must raise ratio
+MR-05,TC_124_001,124,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,keep,Critical for ensuring application stability under repeated actions
+MR-08,TC_124_007,124,list,VALIDATION_CONSISTENCY,Change invalid value from -1 to -5,Same validation error should appear as with the original invalid value,keep,Different input field — ensures consistent error handling
+MR-09,TC_124_009,124,list,VALIDATION_CONSISTENCY,Change invalid value from -1 to -5,Same validation error should appear as with the original invalid value,keep,Different input field — ensures consistent error handling
+MR-06,TC_124_002,124,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Redundant with MR-05
+MR-07,TC_124_004,124,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Redundant with MR-05
+MR-04,TC_124_006,124,list,INPUT_TRANSFORMATION,Change Waist from 6 to 26,Computation completes successfully with updated output values,keep,Coverage rule: first MR of category must survive

@@ -1,0 +1,6 @@
+mr_id,source_tc_id,screen_id,topic,mr_category,transformation,expected_relation,decision,reason
+MR-01,TC_10594-screenshot_001,10594-screenshot,unknown,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,keep,Core app behavior MR must be kept
+MR-02,TC_10594-screenshot_005,10594-screenshot,unknown,INTERACTION_CONSISTENCY,Reverse tap order across 3 icon interactions,UI remains stable and no crash or inconsistent state occurs,keep,High fault detection potential — reveals real defects
+MR-03,TC_10594-screenshot_006,10594-screenshot,unknown,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Redundant with MR-01
+MR-04,TC_10594-screenshot_007,10594-screenshot,unknown,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Redundant with MR-01
+MR-05,TC_10594-screenshot_005,10594-screenshot,unknown,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Redundant with MR-02

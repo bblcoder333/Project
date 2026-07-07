@@ -1,0 +1,7 @@
+mr_id,source_tc_id,screen_id,topic,mr_category,transformation,expected_relation,decision,reason
+MR-02,TC_295_001,295,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,high_priority_keep,Can reveal real defects
+MR-04,TC_295_002,295,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Coverage rule: only the first ROBUSTNESS MR per screen is kept as the baseline; this is a repeat of the same category
+MR-01,TC_295_001,295,list,INVARIANCE,Switch away from 'THIS COURSE' and back,Content and state of 'THIS COURSE' remain the same after switching away and back,keep,Core app behavior MR must be kept
+MR-03,TC_295_002,295,list,INVARIANCE,Switch away from 'TOTAL' and back,Content and state of 'TOTAL' remain the same after switching away and back,keep,Core app behavior MR must be kept
+MR-05,TC_295_003,295,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Coverage rule: only the first ROBUSTNESS MR per screen is kept as the baseline; this is a repeat of the same category
+MR-06,TC_295_004,295,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,"Multiple ROBUSTNESS MRs for the same action, reduce repetitions"
