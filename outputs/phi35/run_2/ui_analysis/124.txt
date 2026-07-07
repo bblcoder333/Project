@@ -1,0 +1,35 @@
+Screen ID: 124
+============================================================
+
+A) Screen purpose and type:
+The image displays a mobile application interface focused on calculating the waist to height ratio, which is a common metric used to assess body fat distribution and potential health risks.
+
+B) Layout top to bottom:
+The layout is structured with a title at the top, followed by input fields for age and height, and a section for waist measurement. Below this, there is a result area and a list of categories indicating different waist to height ratios.
+
+C) Component inventory (grouped):
+The components include a title bar, input fields for age and height, a waist measurement field, a result section, and a list of waist to height ratio categories.
+
+D) Visual design (colors, typography, background):
+The design uses a clean and simple color palette with a white background and teal accents. The typography is modern and legible, with a sans-serif font family used throughout.
+
+E) Accessibility observations:
+The interface appears to be designed with accessibility in mind, featuring clear labels, contrasting colors for text and background, and large enough text for readability. However, without seeing the actual contrast ratios and screen reader compatibility, it's not possible to fully assess the accessibility.
+
+F) Primary actions + navigation:
+The primary action is to input age, height, and waist measurements to calculate the waist to height ratio. Navigation is likely provided through a tab bar or bottom navigation, although it's not visible in the image.
+
+- Screen type/purpose:
+The screen is a health-related application for calculating the waist to height ratio.
+- Key components:
+The key components include input fields for age, height, and waist, a result section, and a list of waist to height ratio categories.
+- Primary CTA(s):
+The primary call to action is to calculate the waist to height ratio.
+- Navigation/footer:
+Navigation is likely provided through a tab bar or bottom navigation, although it's not visible in the image.
+- Dominant colors:
+The dominant colors are white and teal.
+- Typography:
+The typography is modern and legible, with a sans-serif font family used throughout.
+- Accessibility flags:
+The interface appears to be designed with accessibility in mind, but without seeing the actual contrast ratios and screen reader compatibility, it's not possible to fully assess the accessibility.

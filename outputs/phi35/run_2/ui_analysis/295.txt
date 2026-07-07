@@ -1,0 +1,30 @@
+Screen ID: 295
+============================================================
+
+A) Screen purpose and type:
+The image displays a mobile application interface titled 'Leaderboard' with a focus on 'THIS COURSE'. It features a leaderboard section listing top learners with their names and XP (experience points) next to their profile pictures. Below the leaderboard, there is a section titled '... YOU ARE NEXT' followed by a list of users with their names, XP, and a CTA button.
+
+B) Layout top to bottom:
+The layout starts with a status bar at the top, followed by an app bar with the title 'Leaderboard'. Below this, there is a card for 'TOP LEARNERS' with a list of users, each with a profile picture, name, XP, and a rank number. The list is left-aligned. The '... YOU ARE NEXT' section is centered below the leaderboard. The bottom of the screen shows a floating action button and a bottom nav bar.
+
+C) Component inventory (grouped):
+- Card for 'TOP LEARNERS' with profile picture, name, XP, and rank number.
+- '... YOU ARE NEXT' section with user names, XP, and a CTA button.
+- Floating action button and bottom nav bar.
+
+D) Visual design (colors, typography, background):
+The visual design uses a light background with dark text for readability. The leaderboard section has a teal header, while the '... YOU ARE NEXT' section has a white background. The typography is sans-serif, with the leaderboard title in a larger font size than the user names and XP. The CTA button is prominent with a contrasting color.
+
+E) Accessibility observations:
+The screen has a clear contrast ratio, making it accessible. However, the font size for the '... YOU ARE NEXT' section is smaller than the leaderboard title, which could be an accessibility concern. The CTA button is large and easily noticeable.
+
+F) Primary actions + navigation:
+The primary action is the CTA button in the '... YOU ARE NEXT' section, which likely leads to the next course or level. Navigation is provided through the bottom nav bar.
+
+- Screen type/purpose: Leaderboard
+- Key components: Card for 'TOP LEARNERS', '... YOU ARE NEXT' section, floating action button, bottom nav bar
+- Primary CTA(s): CTA button in '... YOU ARE NEXT' section
+- Navigation/footer: Bottom nav bar
+- Dominant colors: Light background with dark text
+- Typography: Sans-serif, font family not specified, font size range not specified, font weight not specified
+- Accessibility flags: Font size in '... YOU ARE NEXT' section below 12sp

@@ -1,0 +1,3 @@
+mr_id,source_tc_id,screen_id,topic,mr_category,transformation,expected_relation,decision,reason
+MR-01,TC_10594-screenshot_001,10594-screenshot,unknown,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,high_priority_keep,Detects potential faults through repetition without redundancy
+MR-02,TC_10594-screenshot_004,10594-screenshot,unknown,ROBUSTNESS,Repeat the primary action a second time,No crashes or inconsistent states upon repeating interaction,reduce_repetitions,Coverage rule: only the first ROBUSTNESS MR per screen is kept as the baseline; this is a repeat of the same category

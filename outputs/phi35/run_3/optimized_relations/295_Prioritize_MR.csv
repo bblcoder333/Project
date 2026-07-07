@@ -1,0 +1,4 @@
+mr_id,source_tc_id,screen_id,topic,mr_category,transformation,expected_relation,decision,reason
+MR-01,TC_295_001,295,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,high_priority_keep,High fault detection potential due to repetition testing.
+MR-02,TC_295_002,295,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Coverage rule: only the first ROBUSTNESS MR per screen is kept as the baseline; this is a repeat of the same category
+MR-03,TC_295_003,295,list,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Coverage rule: only the first ROBUSTNESS MR per screen is kept as the baseline; this is a repeat of the same category
