@@ -4,3 +4,5 @@ rag_knowledge_base/
 outputs/
 .cache/
 .env
+
+.venv-vision/

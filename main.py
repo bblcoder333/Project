@@ -1,3 +1,16 @@
+# main.py
+#
+# Original single-run pipeline — runs the full 4-agent pipeline ONCE using
+# Qwen (Qwen2-VL-7B-Instruct + Qwen2.5-7B-Instruct) across every image in
+# images/, with per-agent emissions logged to outputs/emissions_log.csv.
+#
+# Use this for a quick one-off run when you just want to process your images
+# with Qwen and don't need multiple timed runs or a specific model comparison.
+#
+# For the full multi-model, multi-run sustainability benchmark (Qwen vs
+# Phi-3.5 vs InternVL2, 5 runs each, per-model emissions logs), use
+# benchmark_pipeline.py --model <name> instead — see README.md.
+
 import os
 import csv
 import time
@@ -22,7 +35,11 @@ TOPICS_CSV = "design_topics.csv"
 # ─── Emissions log columns ────────────────────────────────────────────────────
 EMISSIONS_LOG = "outputs/emissions_log.csv"
 EMISSIONS_COLUMNS = [
-    "screen_id", "agent", "energy_kwh", "emissions_kg_co2", "duration_seconds"
+    "screen_id", "agent", "energy_kwh", "emissions_kg_co2",
+    "total_emissions_kg_co2", "duration_seconds",
+    "ram_power_w", "cpu_power_w", "gpu_power_w",
+    "ram_energy_kwh", "cpu_energy_kwh", "gpu_energy_kwh",
+    "region", "country_name", "country_iso_code",
 ]
 
 def _init_emissions_log():
@@ -33,19 +50,34 @@ def _init_emissions_log():
         csv.DictWriter(f, fieldnames=EMISSIONS_COLUMNS).writeheader()
 
 def _log_emissions(screen_id: str, agent: str, tracker: EmissionsTracker, duration_s: float):
-    """Stop tracker and append one row to the emissions log."""
     emissions_kg = tracker.stop()
-    energy_kwh   = tracker._total_energy.kWh if hasattr(tracker, "_total_energy") else 0.0
+    data = tracker.final_emissions_data
+
+    energy_kwh = data.energy_consumed if data else 0.0
+
     with open(EMISSIONS_LOG, "a", newline="", encoding="utf-8") as f:
         csv.DictWriter(f, fieldnames=EMISSIONS_COLUMNS).writerow({
-            "screen_id":        screen_id,
-            "agent":            agent,
-            "energy_kwh":       round(energy_kwh, 6),
-            "emissions_kg_co2": round(emissions_kg or 0.0, 8),
-            "duration_seconds": round(duration_s, 2),
+            "screen_id":              screen_id,
+            "agent":                  agent,
+            "energy_kwh":             round(energy_kwh, 6),
+            "emissions_kg_co2":       round(emissions_kg or 0.0, 8),
+            "total_emissions_kg_co2": round(emissions_kg or 0.0, 8),
+            "duration_seconds":       round(duration_s, 2),
+            "ram_power_w":            round(data.ram_power, 4)        if data else 0.0,
+            "cpu_power_w":            round(data.cpu_power, 4)        if data else 0.0,
+            "gpu_power_w":            round(data.gpu_power, 4)        if data else 0.0,
+            "ram_energy_kwh":         round(data.ram_energy, 6)       if data else 0.0,
+            "cpu_energy_kwh":         round(data.cpu_energy, 6)       if data else 0.0,
+            "gpu_energy_kwh":         round(data.gpu_energy, 6)       if data else 0.0,
+            "region":                 (data.region or "unknown")       if data else "unknown",
+            "country_name":           (data.country_name or "unknown") if data else "unknown",
+            "country_iso_code":       (data.country_iso_code or "unknown") if data else "unknown",
         })
+
     print(f"   🌱 {agent} — {round(emissions_kg or 0.0, 8)} kg CO2 | "
-          f"{round(energy_kwh, 6)} kWh | {round(duration_s, 2)}s")
+          f"{round(energy_kwh, 6)} kWh | {round(duration_s, 2)}s | "
+          f"GPU: {round(data.gpu_power, 2) if data else 0.0}W | "
+          f"region: {data.region if data else 'unknown'}")
 
 # ─── Load topic mapping ───────────────────────────────────────────────────────
 id_to_topic = {}
@@ -74,11 +106,11 @@ for master_path in master_files:
 _init_emissions_log()
 print("🌱 Emissions log initialized")
 
-# ─── Load vision model once (Agent 1) ────────────────────────────────────────
+# ─── Load vision model once (Agent 1) — NOT tracked, this is setup cost ──────
 print("\nLoading vision model (Agent 1)...")
 vision_model, processor = load_model()
 
-# ─── Load text model once (Agents 2, 3, 4 share it) ─────────────────────────
+# ─── Load text model once (Agents 2, 3, 4 share it) — NOT tracked ───────────
 print("\nLoading text model (Agents 2 / 3 / 4)...")
 text_model, text_tokenizer = load_text_model()
 
@@ -97,7 +129,7 @@ for image_file in image_files:
     print(f"\n── Agent 1-4 Pipeline: {image_file} (topic: {topic}) ──")
 
     try:
-        # ── Agent 1 — Perception ─────────────────────────────────────────
+        # ── Agent 1 — Perception (inference only) ────────────────────────
         tracker = EmissionsTracker(
             project_name=f"agent1_{screen_id}",
             output_dir="outputs",
@@ -112,7 +144,7 @@ for image_file in image_files:
         _log_emissions(screen_id, "Agent1_Perception", tracker, time.time() - _t0)
         print(f"✅ Agent 1 complete — UI data saved")
 
-        # ── Agent 2 — Test Case Generation ───────────────────────────────
+        # ── Agent 2 — Test Case Generation (inference only) ──────────────
         tracker = EmissionsTracker(
             project_name=f"agent2_{screen_id}",
             output_dir="outputs",
@@ -130,7 +162,7 @@ for image_file in image_files:
         save_test_cases(tc_data)
         append_to_master_csv(tc_data)
 
-        # ── Agent 3 — Metamorphic Testing (rule-based) ───────────────────
+        # ── Agent 3 — Metamorphic Testing (LLM-based, inference only) ────
         tracker = EmissionsTracker(
             project_name=f"agent3_{screen_id}",
             output_dir="outputs",
@@ -139,15 +171,14 @@ for image_file in image_files:
         )
         tracker.start()
         _t0 = time.time()
-        ui_description = ui_data.get("description", "")
-        mr_data = generate_metamorphic_relations(tc_data, ui_description)
+        mr_data = generate_metamorphic_relations(tc_data, text_model, text_tokenizer)
         _log_emissions(screen_id, "Agent3_Metamorphic", tracker, time.time() - _t0)
         print(f"✅ Agent 3 (Metamorphic) — {len(mr_data.get('metamorphic_relations', []))} MRs")
 
         save_mr_data(mr_data)
         append_mr_to_master_csv(mr_data)
 
-        # ── Agent 4 — Optimization ────────────────────────────────────────
+        # ── Agent 4 — Optimization (inference only) ───────────────────────
         tracker = EmissionsTracker(
             project_name=f"agent4_{screen_id}",
             output_dir="outputs",
