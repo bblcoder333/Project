@@ -39,11 +39,6 @@ MODELS = [
         "vlm_module": "stages.ui_analysis_phi",
         "llm_module": "stages.text_model_phi",
     },
-    {
-    "name":       "internvl",
-    "vlm_module": "stages.ui_analysis_internvl",
-    "llm_module": "stages.text_model_internlm",
-    },
 ]
 
 MODEL_NAMES = [m["name"] for m in MODELS]
@@ -186,6 +181,7 @@ print(f"\n📁 Found {len(image_files)} images to process")
 from stages.test_generation     import generate_test_cases, save_test_cases, append_to_master_csv
 from stages.metamorphic_testing import generate_metamorphic_relations, save_mr_data, append_mr_to_master_csv
 from stages.optimization        import optimize_metamorphic_relations, save_optimized_mr_data, append_optimized_mr_to_master
+from stages.optimization_reduction import generate_reduced_suite, save_reduced_suite, append_reduced_to_master, append_savings_summary
 
 # ─── Run the selected model ───────────────────────────────────────────────────
 
@@ -302,6 +298,20 @@ for run_idx in range(1, NUM_RUNS + 1):
 
             save_optimized_mr_data(opt_data, out_dir=f"{run_out_dir}/optimized_relations")
             append_optimized_mr_to_master(opt_data, master_path=f"{run_out_dir}/optimized_relations_master.csv")
+
+            # ── Agent 5 — Suite Reduction & Energy Savings (LLM-based) ──
+            tracker = EmissionsTracker(
+                project_name=f"agent5_{model_name}_{run_idx}_{screen_id}",
+                output_dir="outputs", log_level="error", save_to_file=False,
+            )
+            tracker.start()
+            _t0 = time.time()
+            reduced_data = generate_reduced_suite(opt_data, text_model, text_tokenizer)
+            _log_emissions(model_name, run_idx, screen_id, "Agent5_Reduction", tracker, time.time() - _t0)
+
+            save_reduced_suite(reduced_data, out_dir=f"{run_out_dir}/reduced_suite")
+            append_reduced_to_master(reduced_data, master_path=f"{run_out_dir}/reduced_suite_master.csv")
+            append_savings_summary(reduced_data, summary_path=f"{run_out_dir}/energy_savings_summary.csv")
 
             print(f"  ✅ Pipeline complete for {screen_id}")
 

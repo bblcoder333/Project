@@ -47,6 +47,7 @@ AGENT_ORDER = [
     "Agent2_Generation",
     "Agent3_Metamorphic",
     "Agent4_Optimization",
+    "Agent5_Reduction",
 ]
 
 

@@ -1,14 +1,11 @@
 # main.py
 #
-# Original single-run pipeline — runs the full 4-agent pipeline ONCE using
-# Qwen (Qwen2-VL-7B-Instruct + Qwen2.5-7B-Instruct) across every image in
+# Single-run pipeline — runs the full 5-agent pipeline ONCE using Qwen
+# (Qwen2-VL-7B-Instruct + Qwen2.5-7B-Instruct) across every image in
 # images/, with per-agent emissions logged to outputs/emissions_log.csv.
 #
-# Use this for a quick one-off run when you just want to process your images
-# with Qwen and don't need multiple timed runs or a specific model comparison.
-#
-# For the full multi-model, multi-run sustainability benchmark (Qwen vs
-# Phi-3.5 vs InternVL2, 5 runs each, per-model emissions logs), use
+# For the full multi-model, multi-run benchmark (Qwen vs Phi vs InternVL vs
+# InternLM, 5 runs each, per-model emissions logs), use
 # benchmark_pipeline.py --model <name> instead — see README.md.
 
 import os
@@ -27,6 +24,12 @@ from stages.optimization import (
     optimize_metamorphic_relations,
     save_optimized_mr_data,
     append_optimized_mr_to_master,
+)
+from stages.optimization_reduction import (
+    generate_reduced_suite,
+    save_reduced_suite,
+    append_reduced_to_master,
+    append_savings_summary,
 )
 
 IMAGES_DIR = "images/"
@@ -97,6 +100,8 @@ master_files = [
     "outputs/testcases_master.csv",
     "outputs/metamorphic_relations_master.csv",
     "outputs/optimized_relations_master.csv",
+    "outputs/reduced_suite_master.csv",
+    "outputs/energy_savings_summary.csv",
 ]
 for master_path in master_files:
     if os.path.exists(master_path):
@@ -110,8 +115,8 @@ print("🌱 Emissions log initialized")
 print("\nLoading vision model (Agent 1)...")
 vision_model, processor = load_model()
 
-# ─── Load text model once (Agents 2, 3, 4 share it) — NOT tracked ───────────
-print("\nLoading text model (Agents 2 / 3 / 4)...")
+# ─── Load text model once (Agents 2, 3, 4, 5 share it) — NOT tracked ────────
+print("\nLoading text model (Agents 2 / 3 / 4 / 5)...")
 text_model, text_tokenizer = load_text_model()
 
 # ─── Process every image ─────────────────────────────────────────────────────
@@ -126,10 +131,10 @@ for image_file in image_files:
     screen_id = os.path.splitext(image_file)[0]
     topic     = id_to_topic.get(screen_id, "unknown")
 
-    print(f"\n── Agent 1-4 Pipeline: {image_file} (topic: {topic}) ──")
+    print(f"\n── Agent 1-5 Pipeline: {image_file} (topic: {topic}) ──")
 
     try:
-        # ── Agent 1 — Perception (inference only) ────────────────────────
+        # ── Agent 1 — Perception ──────────────────────────────────────────
         tracker = EmissionsTracker(
             project_name=f"agent1_{screen_id}",
             output_dir="outputs",
@@ -144,7 +149,7 @@ for image_file in image_files:
         _log_emissions(screen_id, "Agent1_Perception", tracker, time.time() - _t0)
         print(f"✅ Agent 1 complete — UI data saved")
 
-        # ── Agent 2 — Test Case Generation (inference only) ──────────────
+        # ── Agent 2 — Test Case Generation ────────────────────────────────
         tracker = EmissionsTracker(
             project_name=f"agent2_{screen_id}",
             output_dir="outputs",
@@ -162,7 +167,7 @@ for image_file in image_files:
         save_test_cases(tc_data)
         append_to_master_csv(tc_data)
 
-        # ── Agent 3 — Metamorphic Testing (LLM-based, inference only) ────
+        # ── Agent 3 — Metamorphic Testing ─────────────────────────────────
         tracker = EmissionsTracker(
             project_name=f"agent3_{screen_id}",
             output_dir="outputs",
@@ -178,7 +183,7 @@ for image_file in image_files:
         save_mr_data(mr_data)
         append_mr_to_master_csv(mr_data)
 
-        # ── Agent 4 — Optimization (inference only) ───────────────────────
+        # ── Agent 4 — Optimization ─────────────────────────────────────────
         tracker = EmissionsTracker(
             project_name=f"agent4_{screen_id}",
             output_dir="outputs",
@@ -193,6 +198,22 @@ for image_file in image_files:
 
         save_optimized_mr_data(opt_data)
         append_optimized_mr_to_master(opt_data)
+
+        # ── Agent 5 — Suite Reduction & Energy Savings ─────────────────────
+        tracker = EmissionsTracker(
+            project_name=f"agent5_{screen_id}",
+            output_dir="outputs",
+            log_level="error",
+            save_to_file=False,
+        )
+        tracker.start()
+        _t0 = time.time()
+        reduced_data = generate_reduced_suite(opt_data, text_model, text_tokenizer)
+        _log_emissions(screen_id, "Agent5_Reduction", tracker, time.time() - _t0)
+
+        save_reduced_suite(reduced_data)
+        append_reduced_to_master(reduced_data)
+        append_savings_summary(reduced_data)
 
         print(f"✅ Pipeline complete for {screen_id}")
 
