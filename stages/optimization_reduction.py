@@ -103,7 +103,8 @@ OPTIMIZED MRs FROM AGENT 4 (columns separated by ::):
 
 ## HARD RULE — ALLOWED TIERS PER DECISION (you MUST stay within these)
 - decision = "high_priority_keep" -> tier MUST be "always". No exceptions.
-- decision = "keep" -> tier MUST be "always" OR "sampled".
+- decision = "keep" -> tier MUST be "always" OR "sampled". NEVER "dropped" —
+  "dropped" is ONLY ever valid when decision = "reduce_repetitions".
 - decision = "partial_sampling" -> tier MUST be "sampled" OR "optional".
 - decision = "lower_priority" -> tier MUST be "optional" OR "sampled".
 - decision = "reduce_repetitions" -> tier MUST be "dropped" OR "optional".
@@ -114,9 +115,13 @@ Never pick a tier outside the allowed set for that MR's decision.
    INPUT_TRANSFORMATION) that are "keep" -> stay "always". These catch real
    computation/validation regressions; sampling them risks missing bugs.
 2. STABILITY-CHECK categories (ROBUSTNESS, INTERACTION_CONSISTENCY) that are
-   "keep" -> may be downgraded to "sampled" (choose cycle_frequency 2-4).
-   These re-check "does the app still not crash", which has diminishing
-   value once it has passed several consecutive cycles.
+   "keep" -> DEFAULT to "sampled" (cycle_frequency 2-4), not "always". These
+   re-check "does the app still not crash", which has diminishing value once
+   it has passed several consecutive cycles — repeatedly confirming the same
+   thing every single cycle wastes execution energy for little benefit. Only
+   keep one of these at "always" if your reasoning names a specific, concrete
+   reason THIS MR cannot tolerate being skipped even once — a generic "it's
+   important" is not sufficient justification to stay at "always".
 3. For "partial_sampling" MRs: pick cycle_frequency 2-5 for MRs with higher
    fault-detection potential (boundary values, unit conversions), 5-10 for
    lower-value repeats.
@@ -295,7 +300,7 @@ def _assign_tiers_via_llm(opt_data: dict, model, tokenizer) -> tuple:
     mr_lookup = _build_mr_lookup(opt_data)
 
     if not mr_lookup:
-        return {}, 0, 0, 0
+        return {}, 0, 0, 0, 0
 
     mr_csv = _opt_data_to_csv_string(opt_data)
     prompt = AGENT5_PROMPT_TEMPLATE.format(screen_id=screen_id, topic=topic, mr_csv=mr_csv)
