@@ -27,33 +27,60 @@ METAMORPHIC RELATIONS FROM AGENT 3 (columns separated by ::):
 ## OPTIMIZATION CRITERIA (apply all 6)
 
 1. BEHAVIORAL IMPORTANCE
-   Core app behavior MRs must be kept.
-   Keep: MONOTONICITY, INVARIANCE, VALIDATION CONSISTENCY relations.
+   Core app behavior MRs must survive, but "survive" does NOT always mean the
+   decision "keep" — see Rule 2 below. MONOTONICITY, INVARIANCE, and
+   VALIDATION_CONSISTENCY relations must never be removed or downgraded to
+   "reduce_repetitions"/"partial_sampling"/"lower_priority", but the specific
+   decision value they get (keep vs. high_priority_keep) depends on Rule 2.
 
-2. FAULT DETECTION POTENTIAL
-   MRs that can reveal real defects get high priority.
-   High priority: boundary transitions, invalid-to-valid, unit conversion.
+2. FAULT DETECTION POTENTIAL — USE "high_priority_keep" BY DEFAULT HERE
+   The following MR types are exactly the ones this project cares most about
+   catching regressions in, and should default to "high_priority_keep", NOT
+   "keep":
+   - Any VALIDATION_CONSISTENCY MR (invalid-to-valid or invalid-to-invalid
+     value changes) — these test real input validation bugs.
+   - Any INVARIANCE MR that is a unit conversion (e.g. CM|KG to IN|LB).
+   - Any MONOTONICITY MR testing a boundary transition (a value crossing
+     from a low to a clearly higher range).
+   Use plain "keep" for MRs that are important but do NOT match one of the
+   three cases above (e.g. tab-switch INVARIANCE, INPUT_TRANSFORMATION,
+   general ROBUSTNESS, INTERACTION_CONSISTENCY).
 
 3. REDUNDANCY / OVERLAP
-   ROBUSTNESS MRs: if multiple ROBUSTNESS MRs exist, keep the first one as "keep" and
-   mark the rest as "reduce_repetitions" or "partial_sampling".
-   VALIDATION_CONSISTENCY MRs: each one tests a DIFFERENT input field (age, waist, height
-   are all separate fields). They are NEVER redundant with each other — always keep all of them.
-   Never mark VALIDATION_CONSISTENCY as lower_priority unless it is literally identical
-   in both transformation AND field to another MR in the same list.
+   ROBUSTNESS MRs: if multiple ROBUSTNESS MRs exist, keep the first one and
+   mark the REST as "partial_sampling" (not automatically "reduce_repetitions")
+   unless they are truly identical repeats of the exact same action on the
+   exact same element — reserve "reduce_repetitions" for that exact-duplicate
+   case, and use "partial_sampling" when the repeat targets a different
+   element (different icon, different button) but the same interaction
+   pattern, since it still has some residual, if reduced, value.
+   VALIDATION_CONSISTENCY MRs: each one tests a DIFFERENT input field (age,
+   waist, height are all separate fields). They are NEVER redundant with
+   each other — always keep all of them, per Rule 2 as "high_priority_keep".
+   Never mark VALIDATION_CONSISTENCY as lower_priority or reduce_repetitions
+   unless it is literally identical in both transformation AND field to
+   another MR in the same list.
 
 4. EXECUTION DIVERSITY
-   Keep at least one MR from each category that appears in the input.
-   Do partial sampling rather than full removal.
+   Keep at least one MR from each category that appears in the input. Do
+   partial sampling rather than full removal wherever a repeat isn't a true
+   exact duplicate — "partial_sampling" and "lower_priority" are there to be
+   used, not just "keep" and "reduce_repetitions". A screen with several
+   distinct-but-related MRs should show a MIX of decision values, not a
+   binary split.
 
 5. REPRESENTATIVE COVERAGE
-   Ensure at least one MR from EVERY category that appears in the input survives.
-   The FIRST MR of each category must always be "keep" or "high_priority_keep" — never
-   "reduce_repetitions" or "partial_sampling". Only subsequent MRs of the same category
-   on the same element can be downgraded.
+   Ensure at least one MR from EVERY category that appears in the input
+   survives. The FIRST MR of each category must always be "keep" or
+   "high_priority_keep" (per Rule 2's criteria) — never "reduce_repetitions"
+   or "partial_sampling". Only subsequent MRs of the same category on the
+   same element can be downgraded.
 
 6. EXECUTION COST
-   Mark repeated low-value interactions as "lower_frequency" instead of deleting them.
+   For MRs that are weak, marginal, or purely domain-dependent (not a true
+   duplicate, but also not fault-detection-critical) — use "lower_priority"
+   rather than defaulting to "keep". Do not treat "lower_priority" as a rare
+   exception; if an MR's value is genuinely marginal, say so with this label.
 
 ---
 
@@ -264,14 +291,35 @@ def optimize_metamorphic_relations(mr_data: dict, model, tokenizer) -> dict:
 
 
 
+def _is_fault_detection_critical(mr: dict) -> bool:
+    """
+    True if this MR matches Rule 2's fault-detection-critical criteria
+    (boundary transitions, invalid-to-valid changes, unit conversion) and
+    therefore deserves 'high_priority_keep' rather than plain 'keep' when
+    the coverage rule forces it to survive.
+    """
+    category = mr.get("mr_category", "")
+    transformation = mr.get("transformation", "").lower()
+
+    if category == "VALIDATION_CONSISTENCY":
+        return True  # invalid-value changes are exactly Rule 2's "invalid-to-valid" case
+
+    if category == "INVARIANCE" and ("unit" in transformation or "|" in transformation):
+        return True  # unit-toggle invariance (CM|KG etc.), not tab-switch invariance
+
+    if category == "MONOTONICITY":
+        return True  # boundary-transition value increases, per Rule 2
+
+    return False
+
+
 def _enforce_coverage_rules(optimized: list, mr_data: dict) -> list:
     """
     Post-processing safety net that enforces hard rules regardless of model output.
 
     1. Exactly ONE MR per category survives as the "first instance" baseline —
        every later MR in the same category that Qwen also marked keep/high_priority_keep
-       gets capped to reduce_repetitions. (Fixes bug: Sync.me previously had three
-       separate ROBUSTNESS MRs each kept with "first instance" reasoning, one per icon.)
+       gets capped to reduce_repetitions.
 
     2. EXCEPTION: categories in NEVER_REDUNDANT_CATEGORIES (VALIDATION_CONSISTENCY,
        INVARIANCE) get the survivor slot applied PER source_tc_id, not once per
@@ -281,13 +329,22 @@ def _enforce_coverage_rules(optimized: list, mr_data: dict) -> list:
 
     3. Whenever this function changes a decision, OR finds a decision whose existing
        reason text contradicts it (e.g. decision="keep" but reason says "reduce
-       repetitions"), the reason is fully replaced rather than appended to. (Fixes
-       bug: Screen 295's MR-02 had decision="keep" with a leftover reason from before
-       the coverage rule overrode it, so the two disagreed.)
+       repetitions"), the reason is fully replaced rather than appended to.
+
+    4. When this function is FORCED to make an MR survive (it wasn't already
+       keep/high_priority_keep), it checks whether that MR meets Rule 2's
+       fault-detection-critical criteria (via _is_fault_detection_critical) and
+       assigns "high_priority_keep" instead of a flat "keep" when it does. This
+       fixes a bug where the coverage rule always defaulted to "keep" even for
+       MRs the prompt itself says should be "high_priority_keep" — causing
+       high_priority_keep to almost never appear in real output regardless of
+       how many boundary/invalid-value/unit-conversion MRs were present.
     """
     mr_lookup = {mr.get("mr_id", ""): mr for mr in mr_data.get("metamorphic_relations", [])}
 
-    NEVER_REDUNDANT_CATEGORIES = {"VALIDATION_CONSISTENCY", "INVARIANCE"}
+    NEVER_REDUNDANT_CATEGORIES = {
+        "VALIDATION_CONSISTENCY", "INVARIANCE", "MONOTONICITY", "INPUT_TRANSFORMATION",
+    }
 
     _DEMOTION_LANGUAGE = ("reduce repetition", "redundant", "lower priority", "lower_priority")
 
@@ -301,18 +358,22 @@ def _enforce_coverage_rules(optimized: list, mr_data: dict) -> list:
 
     # ── Rule 1: one survivor per category, except NEVER_REDUNDANT_CATEGORIES
     seen_categories = set()
+    seen_transformations = {}  # category -> set of transformation strings already accepted as the survivor
     for opt in optimized:
         cat = opt.get("mr_category", "")
         decision = opt.get("decision", "")
+        transformation = opt.get("transformation", "")
 
         if cat in NEVER_REDUNDANT_CATEGORIES:
             continue  # handled per-source_tc_id in Rule 1b below
 
         if cat not in seen_categories:
             seen_categories.add(cat)
+            seen_transformations[cat] = {transformation}
             if decision in ("reduce_repetitions", "partial_sampling", "lower_priority"):
-                opt["decision"] = "keep"
-                opt["reason"] = "Coverage rule: first MR of category must survive"
+                forced_decision = "high_priority_keep" if _is_fault_detection_critical(opt) else "keep"
+                opt["decision"] = forced_decision
+                opt["reason"] = f"Coverage rule: first MR of category must survive as '{forced_decision}'"
             else:
                 _sanitize_contradictory_reason(
                     opt, "Coverage rule: first MR of category must survive"
@@ -320,11 +381,24 @@ def _enforce_coverage_rules(optimized: list, mr_data: dict) -> list:
             continue
 
         if decision in ("keep", "high_priority_keep"):
-            opt["decision"] = "reduce_repetitions"
-            opt["reason"] = (
-                f"Coverage rule: only the first {cat} MR per screen is kept as "
-                f"the baseline; this is a repeat of the same category"
-            )
+            # A true exact duplicate (same transformation text as an already-
+            # accepted survivor in this category) still gets fully cut. A
+            # duplicate that targets a different element (different
+            # transformation text) retains some residual value and should be
+            # sampled occasionally rather than dropped entirely.
+            if transformation in seen_transformations[cat]:
+                opt["decision"] = "reduce_repetitions"
+                opt["reason"] = (
+                    f"Coverage rule: exact duplicate {cat} MR on the same screen"
+                )
+            else:
+                opt["decision"] = "partial_sampling"
+                opt["reason"] = (
+                    f"Coverage rule: only the first {cat} MR per screen is the "
+                    f"full baseline; this targets a different element with the "
+                    f"same pattern, so it's sampled rather than dropped"
+                )
+        seen_transformations[cat].add(transformation)
 
     # ── Rule 1b: NEVER_REDUNDANT_CATEGORIES get one survivor PER source_tc_id,
     # not one per category — different fields/elements are never duplicates.
@@ -340,8 +414,9 @@ def _enforce_coverage_rules(optimized: list, mr_data: dict) -> list:
         if key not in seen_per_category_tc:
             seen_per_category_tc.add(key)
             if decision in ("reduce_repetitions", "partial_sampling", "lower_priority"):
-                opt["decision"] = "keep"
-                opt["reason"] = f"{cat} on a distinct source test case — never redundant, must be kept"
+                forced_decision = "high_priority_keep" if _is_fault_detection_critical(opt) else "keep"
+                opt["decision"] = forced_decision
+                opt["reason"] = f"{cat} on a distinct source test case — never redundant, must be kept as '{forced_decision}'"
             else:
                 _sanitize_contradictory_reason(
                     opt, f"{cat} on a distinct source test case — never redundant, must be kept"
