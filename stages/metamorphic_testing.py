@@ -5,32 +5,6 @@ import os
 import torch
 from json_repair import repair_json
 
-# ─── CSV columns ──────────────────────────────────────────────────────────────
-
-MR_CSV_COLUMNS = [
-    "mr_id",
-    "source_tc_id",
-    "screen_id",
-    "topic",
-    "mr_category",
-    "transformation",
-    "follow_up_steps",
-    "follow_up_test_data",
-    "expected_relation",
-    "confidence",
-]
-
-# Fields that are never meaningful for monotonicity / input transformation -
-# these are identifiers/demographics, not measurements that scale meaningfully.
-# Generalized as a SKIP list rather than an ALLOW list so new field names on
-# unseen screens (Weight, Score, Distance, Price, Quantity, Calories, Speed,
-# Duration, etc.) are recognized automatically without needing to be enumerated.
-_SKIP_NUMERIC_FIELDS = {
-    "age", "height", "gender", "rank", "year", "id", "xp", "phone", "number",
-    "code", "pin", "otp", "zip", "zipcode", "postal", "version", "index",
-    "position", "page", "count", "quantity_id", "user id", "order id",
-}
-
 # ─── Prompt ───────────────────────────────────────────────────────────────────
 
 MR_PROMPT_TEMPLATE = """
@@ -184,7 +158,59 @@ OUTPUT ONLY valid JSON, no markdown, no explanation:
 """
 
 
+# ─── CSV columns ──────────────────────────────────────────────────────────────
+
+MR_CSV_COLUMNS = [
+    "mr_id",
+    "source_tc_id",
+    "screen_id",
+    "topic",
+    "mr_category",
+    "transformation",
+    "follow_up_steps",
+    "follow_up_test_data",
+    "expected_relation",
+    "confidence",
+]
+
+# Fields that are never meaningful for monotonicity / input transformation -
+# these are identifiers/demographics, not measurements that scale meaningfully.
+# Generalized as a SKIP list rather than an ALLOW list so new field names on
+# unseen screens (Weight, Score, Distance, Price, Quantity, Calories, Speed,
+# Duration, etc.) are recognized automatically without needing to be enumerated.
+_SKIP_NUMERIC_FIELDS = {
+    "age", "height", "gender", "rank", "year", "id", "xp", "phone", "number",
+    "code", "pin", "otp", "zip", "zipcode", "postal", "version", "index",
+    "position", "page", "count", "quantity_id", "user id", "order id",
+}
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _safe_pipe_join(val):
+    """
+    Dict-safe join using " | " as the separator (matches the format the
+    prompt itself uses, e.g. "CM | KG", so pattern-B unit-toggle detection
+    and the general prompt formatting stay identical to before for any
+    model whose output is already flat strings, like Qwen).
+
+    Some model outputs (observed with Phi-3.5) occasionally put a dict
+    inside a field that's supposed to be a flat list of strings (e.g.
+    test_data or expected). Plain " | ".join(...) crashes with
+    "TypeError: sequence item N: expected str instance, dict found" the
+    moment that happens. This coerces any non-string item to a JSON string
+    instead of crashing, while leaving pure-string lists (Qwen's normal
+    output) byte-for-byte identical to the old " | ".join(...) behavior.
+    """
+    if not val:
+        return ""
+    if isinstance(val, str):
+        return val
+    return " | ".join(
+        v if isinstance(v, str) else json.dumps(v)
+        for v in val
+    )
+
 
 def _tc_data_to_csv_string(tc_data: dict) -> str:
     """
@@ -194,10 +220,9 @@ def _tc_data_to_csv_string(tc_data: dict) -> str:
     """
     lines = []
     for i, tc in enumerate(tc_data.get("test_cases", []), start=1):
-        steps = " | ".join(tc.get("steps", []))
-        test_data = tc.get("test_data", [])
-        test_data_str = " | ".join(test_data) if isinstance(test_data, list) else str(test_data)
-        expected = " | ".join(tc.get("expected", []))
+        steps = _safe_pipe_join(tc.get("steps", []))
+        test_data_str = _safe_pipe_join(tc.get("test_data", []))
+        expected = _safe_pipe_join(tc.get("expected", []))
         lines.append(
             f"[{i}] {tc.get('test_case_id','')} :: {tc.get('title','')} :: "
             f"{tc.get('type','')} :: {test_data_str} :: {steps} :: {expected}"
@@ -221,7 +246,7 @@ def _extract_qualifying_numeric_field(tc: dict):
     Returns None if no qualifying field is found.
     """
     test_data = tc.get("test_data", [])
-    test_data_str = " | ".join(test_data) if isinstance(test_data, list) else str(test_data)
+    test_data_str = _safe_pipe_join(test_data)
     steps_str = " ".join(tc.get("steps", []))
 
     # Source 1: structured test_data e.g. "Waist: 6 cm"
@@ -280,6 +305,12 @@ def _count_numeric_qualifying_tcs(tc_data: dict) -> int:
 
 
 def _safe_join(val):
+    """
+    Comma-separated dict-safe join, used for the final CSV FILE columns
+    (follow_up_steps etc. written to disk) - distinct from _safe_pipe_join,
+    which is only for building the LLM prompt string and must keep the
+    " | " separator the prompt format relies on.
+    """
     if not val:
         return ""
     if isinstance(val, str):
@@ -308,7 +339,7 @@ def _value_exists_in_tc(value: str, tc: dict) -> bool:
         return True
     haystack = " ".join([
         tc.get("title", ""),
-        " ".join(tc.get("test_data", [])) if isinstance(tc.get("test_data"), list) else str(tc.get("test_data", "")),
+        _safe_pipe_join(tc.get("test_data", [])),
         " ".join(tc.get("steps", [])),
         " ".join(tc.get("expected", [])),
     ]).lower()
@@ -395,7 +426,7 @@ def _validate_and_clean_mrs(mrs: list, tc_lookup: dict) -> list:
         # Hallucination guard for VALIDATION_CONSISTENCY / MONOTONICITY / INPUT_TRANSFORMATION
         if category in ("VALIDATION_CONSISTENCY", "MONOTONICITY", "INPUT_TRANSFORMATION") and tc:
             tc_test_data = tc.get("test_data", [])
-            tc_test_data_str = " ".join(tc_test_data) if isinstance(tc_test_data, list) else str(tc_test_data)
+            tc_test_data_str = _safe_pipe_join(tc_test_data)
             tc_steps_str = " ".join(tc.get("steps", []))
             has_enter_action = bool(re.search(r"\benter\b", tc_steps_str, re.IGNORECASE))
             has_real_value = bool(tc_test_data_str.strip()) or bool(re.search(r"\d", tc_steps_str))
@@ -625,7 +656,7 @@ def backfill_validation_consistency_mrs(mrs: list, tc_data: dict) -> list:
             continue
 
         test_data = tc.get("test_data", [])
-        test_data_str = " ".join(test_data) if isinstance(test_data, list) else str(test_data)
+        test_data_str = _safe_pipe_join(test_data)
         steps = tc.get("steps", [])
         steps_str = " ".join(steps)
 
