@@ -100,6 +100,16 @@ MODELS = [
         "vlm_module": "stages.ui_analysis_internvl",
         "llm_module": "stages.text_model_internlm",
     },
+    {
+        "name":       "internvl_mistral",
+        "vlm_module": "stages.ui_analysis_internvl",
+        "llm_module": "stages.text_model_mistral",
+    },
+    {
+        "name":       "internvl_llama3",
+        "vlm_module": "stages.ui_analysis_internvl",
+        "llm_module": "stages.text_model_llama3",
+    },
 ]
 
 MODEL_NAMES = [m["name"] for m in MODELS]

@@ -178,6 +178,38 @@ def load_text_model():
     return model, tokenizer
 
 
+def _sanitize_test_cases(test_cases: list) -> list:
+    """
+    Coerce every element of each test case's "steps", "expected", and
+    "test_data" fields to a plain string, in place, right after the JSON
+    parses and BEFORE deduplicate_test_cases/light_post_process touch it.
+
+    Found via Agent 3's diagnostics log (25 parse_exception rows, all
+    "sequence item N: expected str instance, list/dict found" or "expected
+    string or bytes-like object, got 'dict'") that this model occasionally
+    puts a nested list/dict inside what should be a flat list of strings.
+    That was being caught downstream in metamorphic_testing.py, but it
+    originates HERE, in Agent 2's own output — and the bug here is worse:
+    deduplicate_test_cases (line "steps_key = ' | '.join(tc.get('steps',
+    []))") and light_post_process both do a raw, unguarded .join() on this
+    same field, and generate_test_cases' except clause catches that crash
+    and returns {"test_cases": []} — discarding EVERY test case for the
+    whole screen, not just the one malformed entry. That's a plausible
+    direct contributor to screens ending up with zero MRs downstream,
+    independent of anything Agent 3 does. Sanitizing here, before
+    dedup/post-processing run, prevents this class of crash from wiping a
+    screen's test cases at all going forward.
+    """
+    for tc in test_cases:
+        for field in ("steps", "expected", "test_data"):
+            val = tc.get(field)
+            if isinstance(val, list):
+                tc[field] = [v if isinstance(v, str) else json.dumps(v) for v in val]
+            elif val is not None and not isinstance(val, str):
+                tc[field] = json.dumps(val)
+    return test_cases
+
+
 def deduplicate_test_cases(test_cases: list) -> list:
     """Remove duplicate test cases based on steps."""
     seen_steps = set()
@@ -234,7 +266,7 @@ def generate_test_cases(ui_data: dict, model, tokenizer) -> dict:
         text,
         return_tensors="pt",
         truncation=True,
-        max_length=4096,
+        max_length=6144,
     ).to("cuda")
 
     print(f"   🔄 Generating test cases (Qwen 7B)...")
@@ -263,7 +295,8 @@ def generate_test_cases(ui_data: dict, model, tokenizer) -> dict:
         repaired = repair_json(candidate)
         result = json.loads(repaired)
 
-        result["test_cases"] = deduplicate_test_cases(result.get("test_cases", []))
+        result["test_cases"] = _sanitize_test_cases(result.get("test_cases", []))
+        result["test_cases"] = deduplicate_test_cases(result["test_cases"])
         result["test_cases"] = light_post_process(result["test_cases"])
         
         print(f"   ✅ Generated {len(result['test_cases'])} test cases")

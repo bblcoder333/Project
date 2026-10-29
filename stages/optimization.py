@@ -390,7 +390,7 @@ def optimize_metamorphic_relations(mr_data: dict, model, tokenizer) -> dict:
         text,
         return_tensors="pt",
         truncation=True,
-        max_length=6144,
+        max_length=8192,
     ).to("cuda")
 
     print(f"   🔄 Optimizing metamorphic relations (Agent 4)...")
@@ -398,7 +398,7 @@ def optimize_metamorphic_relations(mr_data: dict, model, tokenizer) -> dict:
     with torch.no_grad():
         ids = model.generate(
             **inputs,
-            max_new_tokens=2000,
+            max_new_tokens=4000,
             do_sample=False,
             top_p=1.0,
             repetition_penalty=1.05,
@@ -420,6 +420,7 @@ def optimize_metamorphic_relations(mr_data: dict, model, tokenizer) -> dict:
         result    = json.loads(repaired)
 
         optimized = result.get("optimized_relations", [])
+        optimized = _filter_hallucinated_mrs(optimized, mr_lookup)
 
         # Enrich with any missing fields from Agent 3 lookup
         for opt in optimized:
@@ -437,6 +438,7 @@ def optimize_metamorphic_relations(mr_data: dict, model, tokenizer) -> dict:
             if opt.get("decision") not in valid_decisions:
                 opt["decision"] = "keep"
 
+        optimized = _backfill_missing_mrs(optimized, mr_data)
         optimized = _sort_by_decision(optimized)
         optimized = _enforce_coverage_rules(optimized, mr_data)
         optimized = _upgrade_fault_critical_keeps(optimized)
@@ -564,6 +566,79 @@ def _demote_ineligible_high_priority_keeps(optimized: list) -> list:
             f"(VALIDATION_CONSISTENCY, MONOTONICITY, numeric-value-preserving "
             f"INVARIANCE); decision clamped from 'high_priority_keep' to 'keep'"
         )
+    return optimized
+
+
+def _filter_hallucinated_mrs(optimized: list, mr_lookup: dict) -> list:
+    """
+    Safety net for the OPPOSITE failure mode from _backfill_missing_mrs: the
+    LLM sometimes returns MORE optimized_relations entries than Agent 3
+    actually generated, inventing extra mr_ids that were never in the input.
+    Observed concentrated in ROBUSTNESS, MONOTONICITY, and
+    VALIDATION_CONSISTENCY — almost certainly because the prompt's
+    per-field/per-element "never redundant" rules for those categories get
+    over-generalized by the model into fabricating additional
+    fields/elements it imagines should exist, rather than strictly
+    classifying only what Agent 3 actually provided.
+
+    Any optimized entry whose mr_id doesn't correspond to a real Agent 3 MR
+    is dropped here — otherwise it reaches _enforce_coverage_rules and every
+    downstream pass as if it were legitimate data, since those functions
+    only reclassify/enrich entries already in the list and never check
+    whether an mr_id was real to begin with.
+    """
+    kept, dropped_ids = [], []
+    for opt in optimized:
+        if opt.get("mr_id", "") in mr_lookup:
+            kept.append(opt)
+        else:
+            dropped_ids.append(opt.get("mr_id", "?"))
+
+    if dropped_ids:
+        print(f"   ⚠️  Agent 4: dropped {len(dropped_ids)} hallucinated MR(s) "
+              f"not present in Agent 3's output: {dropped_ids}")
+
+    return kept
+
+
+def _backfill_missing_mrs(optimized: list, mr_data: dict) -> list:
+    """
+    Safety net for output-token-limit truncation: max_new_tokens is a hard
+    ceiling, and a screen with an unusually high MR count can still exceed
+    it even after raising the cap. If the LLM's JSON response is cut off
+    before listing every MR, this adds back any mr_id present in Agent 3's
+    output (mr_data) but missing from `optimized`, so a truncated response
+    can never silently drop MR coverage. Backfilled entries get the same
+    fault-detection-critical eligibility check as the rest of the pipeline
+    (via _is_fault_detection_critical), not a flat default decision — and
+    are clearly labeled in `reason` so they're distinguishable in the CSVs
+    from MRs the LLM actually classified.
+    """
+    present_ids = {opt.get("mr_id", "") for opt in optimized}
+    all_mrs = mr_data.get("metamorphic_relations", [])
+    missing = [mr for mr in all_mrs if mr.get("mr_id", "") not in present_ids]
+
+    for mr in missing:
+        decision = "high_priority_keep" if _is_fault_detection_critical(mr) else "keep"
+        optimized.append({
+            "mr_id":             mr.get("mr_id", ""),
+            "source_tc_id":      mr.get("source_tc_id", ""),
+            "mr_category":       mr.get("mr_category", ""),
+            "transformation":    mr.get("transformation", ""),
+            "expected_relation": mr.get("expected_relation", ""),
+            "decision":          decision,
+            "reason": (
+                "Backfilled — present in Agent 3 output but missing from "
+                "Agent 4's LLM response (most likely truncated at the "
+                "output token limit); added by the coverage safety net "
+                "instead of being silently dropped"
+            ),
+        })
+
+    if missing:
+        print(f"   ⚠️  Agent 4: backfilled {len(missing)} MR(s) missing from "
+              f"the LLM response (likely truncation) — coverage preserved")
+
     return optimized
 
 

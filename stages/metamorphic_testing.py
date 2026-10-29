@@ -212,6 +212,47 @@ def _safe_pipe_join(val):
     )
 
 
+def _safe_space_join(val):
+    """
+    Space-joined dict/list-safe join. Same rationale as _safe_pipe_join
+    above: some model outputs put a dict or nested list inside a field
+    that's supposed to be a flat list of strings (steps, expected). Plain
+    " ".join(...) crashes with "TypeError: sequence item N: expected str
+    instance, list/dict found" the moment that happens. Used inside
+    _validate_and_clean_mrs for its space-joined comparison strings.
+    """
+    if not val:
+        return ""
+    if isinstance(val, str):
+        return val
+    return " ".join(
+        v if isinstance(v, str) else json.dumps(v)
+        for v in val
+    )
+
+
+def _sanitize_tc_data(tc_data: dict) -> dict:
+    """
+    Coerce every element of each test case's "steps", "expected", and
+    "test_data" fields to a plain string, in place, ONCE, before anything
+    else in this file touches tc_data. Several functions
+    (_extract_qualifying_numeric_field, _clean_and_renumber, the backfill_*
+    functions, _validate_and_clean_mrs) all do raw " ".join(tc.get("steps",
+    [])) or re.sub(pattern, "", s, ...) on these same fields, so sanitizing
+    tc_data once at the single entry point they all ultimately read from
+    (tc_data or tc_lookup, built from it) closes the whole class of bug at
+    once rather than patching each call site individually.
+    """
+    for tc in tc_data.get("test_cases", []):
+        for field in ("steps", "expected", "test_data"):
+            val = tc.get(field)
+            if isinstance(val, list):
+                tc[field] = [v if isinstance(v, str) else json.dumps(v) for v in val]
+            elif val is not None and not isinstance(val, str):
+                tc[field] = json.dumps(val)
+    return tc_data
+
+
 def _tc_data_to_csv_string(tc_data: dict) -> str:
     """
     Convert Agent 2 test cases dict to a :: separated string for the prompt.
@@ -326,8 +367,18 @@ def _build_tc_lookup(tc_data: dict) -> dict:
 
 
 def _clean_and_renumber(steps: list) -> list:
-    """Strip any existing Step N: prefixes and renumber cleanly."""
-    stripped = [re.sub(r"^Step\s*\d+:\s*", "", s, flags=re.IGNORECASE).strip() for s in steps]
+    """
+    Strip any existing Step N: prefixes and renumber cleanly. steps here is
+    the LLM's OWN output (mr["follow_up_steps"]), not tc_data, so
+    _sanitize_tc_data doesn't cover it - the LLM can put a non-string
+    element in its own JSON just as easily as Agent 2 can in tc_data, and
+    re.sub requires a str argument, so this coerces non-string elements
+    before stripping the prefix.
+    """
+    stripped = [
+        re.sub(r"^Step\s*\d+:\s*", "", s if isinstance(s, str) else json.dumps(s), flags=re.IGNORECASE).strip()
+        for s in steps
+    ]
     return [f"Step {i+1}: {s}" for i, s in enumerate(stripped) if s]
 
 
@@ -411,7 +462,7 @@ def _validate_and_clean_mrs(mrs: list, tc_lookup: dict) -> list:
 
         # Block INVARIANCE / MONOTONICITY / INPUT_TRANSFORMATION on non-qualifying TCs
         if category in ("INVARIANCE", "MONOTONICITY", "INPUT_TRANSFORMATION") and tc:
-            combined = " ".join(
+            combined = _safe_space_join(
                 tc.get("steps", []) +
                 (tc.get("test_data", []) if isinstance(tc.get("test_data"), list) else [str(tc.get("test_data", ""))])
             )
@@ -427,7 +478,7 @@ def _validate_and_clean_mrs(mrs: list, tc_lookup: dict) -> list:
         if category in ("VALIDATION_CONSISTENCY", "MONOTONICITY", "INPUT_TRANSFORMATION") and tc:
             tc_test_data = tc.get("test_data", [])
             tc_test_data_str = _safe_pipe_join(tc_test_data)
-            tc_steps_str = " ".join(tc.get("steps", []))
+            tc_steps_str = _safe_space_join(tc.get("steps", []))
             has_enter_action = bool(re.search(r"\benter\b", tc_steps_str, re.IGNORECASE))
             has_real_value = bool(tc_test_data_str.strip()) or bool(re.search(r"\d", tc_steps_str))
             if not has_enter_action or not has_real_value:
@@ -475,13 +526,15 @@ def _validate_and_clean_mrs(mrs: list, tc_lookup: dict) -> list:
             # counter itself (Step 1, Step 2...) is never mistaken for a
             # contaminated input value copied in from another TC.
             source_steps_stripped = [
-                re.sub(r"^Step\s*\d+:\s*", "", s, flags=re.IGNORECASE) for s in tc.get("steps", [])
+                re.sub(r"^Step\s*\d+:\s*", "", s if isinstance(s, str) else json.dumps(s), flags=re.IGNORECASE)
+                for s in tc.get("steps", [])
             ]
             mr_steps_stripped = [
-                re.sub(r"^Step\s*\d+:\s*", "", s, flags=re.IGNORECASE) for s in mr.get("follow_up_steps", [])
+                re.sub(r"^Step\s*\d+:\s*", "", s if isinstance(s, str) else json.dumps(s), flags=re.IGNORECASE)
+                for s in mr.get("follow_up_steps", [])
             ]
-            source_numbers = set(re.findall(r"-?\d+(?:\.\d+)?", " ".join(source_steps_stripped)))
-            mr_numbers = set(re.findall(r"-?\d+(?:\.\d+)?", " ".join(mr_steps_stripped)))
+            source_numbers = set(re.findall(r"-?\d+(?:\.\d+)?", _safe_space_join(source_steps_stripped)))
+            mr_numbers = set(re.findall(r"-?\d+(?:\.\d+)?", _safe_space_join(mr_steps_stripped)))
             # Any number appearing in the MR's steps that never appeared in the
             # source TC's own steps means data leaked in from elsewhere.
             if mr_numbers - source_numbers:
@@ -492,7 +545,7 @@ def _validate_and_clean_mrs(mrs: list, tc_lookup: dict) -> list:
         # source TC's expected_result almost verbatim, replace it with the
         # correct default rather than keep the misplaced text.
         if tc:
-            expected_str = " ".join(tc.get("expected", [])).strip().lower()
+            expected_str = _safe_space_join(tc.get("expected", [])).strip().lower()
             current_test_data = mr.get("follow_up_test_data", "").strip().lower()
             if expected_str and current_test_data == expected_str:
                 mr["follow_up_test_data"] = (
@@ -887,6 +940,7 @@ def _renumber_mr_ids(mrs: list) -> list:
 
 # ─── Main generation function ─────────────────────────────────────────────────
 
+
 def generate_metamorphic_relations(tc_data: dict, model, tokenizer) -> dict:
     """
     Agent 3 (LLM-based): takes Agent 2 output (tc_data) and generates
@@ -905,6 +959,8 @@ def generate_metamorphic_relations(tc_data: dict, model, tokenizer) -> dict:
     output quality variance only affects F and the exact wording/confidence
     of categories elsewhere - never their presence or absence.
     """
+    tc_data = _sanitize_tc_data(tc_data)
+
     screen_id = tc_data.get("screen_id", "unknown")
     topic     = tc_data.get("topic", "unknown")
 
@@ -962,7 +1018,6 @@ def generate_metamorphic_relations(tc_data: dict, model, tokenizer) -> dict:
         ids[0][inputs.input_ids.shape[1]:], skip_special_tokens=True
     )
 
-    llm_mr_count = 0
     try:
         blocks = re.findall(r"\{.*\}", raw, re.DOTALL)
         if not blocks:
@@ -975,7 +1030,7 @@ def generate_metamorphic_relations(tc_data: dict, model, tokenizer) -> dict:
             mrs = result.get("metamorphic_relations", [])
 
         mrs = _validate_and_clean_mrs(mrs, tc_lookup)
-        llm_mr_count = len(mrs)  # count AFTER cleaning, BEFORE backfills, for diagnostics
+        llm_mr_count = len(mrs)  # count AFTER cleaning, BEFORE backfills
 
         mrs = _deduplicate_mrs(mrs)
         mrs = backfill_tab_invariance_mrs(mrs, tc_data)
@@ -1005,6 +1060,7 @@ def generate_metamorphic_relations(tc_data: dict, model, tokenizer) -> dict:
         mrs = backfill_dual_coverage_robustness_mrs(mrs, tc_lookup)
         mrs = backfill_interaction_consistency_mrs(mrs, tc_data)
         mrs = _renumber_mr_ids(mrs)
+
         return {
             "screen_id":             screen_id,
             "topic":                 topic,
