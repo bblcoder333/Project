@@ -1,8 +1,14 @@
-torch
-transformers
+# Qwen environment (.venv) — used for: --model qwen, main.py
+#   python -m venv .venv && .\.venv\Scripts\Activate.ps1
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   pip install -r requirements.txt
+# Phi-3.5 / InternVL2 pairings need a different transformers version:
+# see requirements-vision.txt.
+transformers==5.8.1
+accelerate
+pillow
 qwen-vl-utils
-chromadb
-sentence-transformers
-Pillow
+json_repair
+codecarbon
+pandas
 matplotlib
-json-repair

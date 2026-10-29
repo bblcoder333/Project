@@ -1,0 +1,18 @@
+# Phi-3.5 / InternVL2 environment (.venv-vision) — used for:
+#   --model phi35, internvl, internvl_mistral, internvl_llama3
+#   python -m venv .venv-vision && .\.venv-vision\Scripts\Activate.ps1
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#   pip install -r requirements-vision.txt
+# transformers is pinned to 4.46.1 because these models' trust_remote_code
+# modeling code breaks on newer versions (cache-API errors).
+transformers==4.46.1
+accelerate
+pillow
+json_repair
+codecarbon
+einops
+timm
+sentencepiece
+protobuf
+pandas
+matplotlib

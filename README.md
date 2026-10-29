@@ -23,6 +23,23 @@ math is always computed in plain Python from the assigned tier — never by the 
 — and falls back to a fixed `DECISION_TO_TIER_FALLBACK` mapping if its own LLM call
 can't be parsed.
 
+**Agent ↔ phase naming.** The paper and result workbook call these *phases*:
+Phase 1 = Agent 1 (UI Perception), Phase 2 = Agent 2 (Source Test Generation),
+Phase 3 = Agent 3 (MR Generation), Phase 4 = Agent 4 (MR Prioritization),
+Phase 5 = Agent 5 (Execution Scheduling). The code and logs use "Agent N".
+
+**Robustness layers added to the LLM stages** (all deterministic, no extra LLM calls):
+
+- **Agents 2 & 3 — type sanitizing.** `_sanitize_test_cases` / `_sanitize_tc_data`
+  coerce non-string elements (nested lists/dicts some models emit inside `steps`,
+  `expected`, `test_data`) to strings before any `.join()` / `re.sub()`. Without
+  this, one malformed test case raised an exception that discarded *every* test
+  case for the screen.
+- **Agent 4 — hallucination filter and truncation backfill.**
+  `_filter_hallucinated_mrs` drops `mr_id`s the LLM invented that Agent 3 never
+  produced; `_backfill_missing_mrs` re-adds any Agent 3 MR missing from the response
+  (e.g. cut off at the output-token limit), labeled `Backfilled` in `reason`.
+
 ## Two ways to run this
 
 `batch_runner.py` (the wrapper that looped `main.py` in batches) is gone — its
@@ -32,7 +49,7 @@ simple, single-model backup option:
 | | `main.py` | `benchmark_pipeline.py` |
 | --- | --- | --- |
 | Purpose | Simple, single-model backup — process the full dataset once, with Qwen | Compare energy/emissions across models |
-| Models | Qwen only (hard-coded) | `qwen`, `phi35`, `internvl` (see `MODELS` list) |
+| Models | Qwen only (hard-coded) | `qwen`, `phi35`, `internvl`, `internvl_mistral`, `internvl_llama3` (see `MODELS` list) |
 | Resume support | Yes — checkpoints to `outputs/completed_screens.txt` | Yes — checkpoints to `outputs/<model>/run_N/completed_screens.txt`, per run |
 | Batching | `--batch-size N` processes the next N unfinished images (no default — omit to process all remaining in one go) | `--batch-size N` per run, defaults to 100 for every model, plus `--max-batches` to cap an invocation |
 | Runs | Always a single pass | `--runs` timed repeats (default 3) per model |
@@ -45,10 +62,12 @@ multi-model machinery. Use `benchmark_pipeline.py` when you're comparing
 models or want the finer-grained per-run/per-batch output structure.
 
 ```powershell
-# benchmark_pipeline.py — all three default to 100-image batches per run
+# benchmark_pipeline.py — all models default to 100-image batches per run
 python benchmark_pipeline.py --model qwen
 python benchmark_pipeline.py --model phi35 --batch-size 250
 python benchmark_pipeline.py --model internvl --max-batches 3   # quick test, still batches of 100
+python benchmark_pipeline.py --model internvl_mistral
+python benchmark_pipeline.py --model internvl_llama3
 python benchmark_pipeline.py --model qwen --runs 1
 python benchmark_pipeline.py --model qwen --fresh
 ```
@@ -61,16 +80,46 @@ progress and start over.
 
 ## Models benchmarked
 
-| Model pair | Vision model            | Text model            | Params (approx)                  |
-| ---------- | ------------------------ | ---------------------- | --------------------------------- |
-| Qwen       | Qwen2-VL-7B-Instruct     | Qwen2.5-7B-Instruct    | 7B / 7B                           |
-| Phi-3.5    | Phi-3.5-vision-instruct  | Phi-3.5-mini-instruct  | 4.2B / 3.8B                       |
-| InternVL2  | InternVL2-8B             | internlm2_5-7b-chat    | 8B / 7B (matched pair, same lab)  |
+Five configurations, each a vision model (Agent 1) plus a text LLM shared by
+Agents 2–5. All weights are loaded in `bfloat16` (no quantization).
 
-All three are wired into `benchmark_pipeline.py`'s `MODELS` list — pick one with
-`--model qwen` / `--model phi35` / `--model internvl`. Each does `--runs` timed
-passes (default 3) across every screenshot in `images/`, with per-agent energy
-(kWh), emissions (kg CO2), and duration logged via CodeCarbon.
+| `--model`          | Vision model (Agent 1)  | Text LLM (Agents 2–5)                | Params (approx)  | Venv           |
+| ------------------ | ----------------------- | ------------------------------------ | ---------------- | -------------- |
+| `qwen`             | Qwen2-VL-7B-Instruct    | Qwen2.5-7B-Instruct                  | 7B / 7B          | `.venv`        |
+| `phi35`            | Phi-3.5-vision-instruct | Phi-3.5-mini-instruct                | 4.2B / 3.8B      | `.venv-vision` |
+| `internvl`         | InternVL2-8B            | internlm2_5-7b-chat                  | 8B / 7B          | `.venv-vision` |
+| `internvl_mistral` | InternVL2-8B            | Mistral-7B-Instruct-v0.3             | 8B / 7B          | `.venv-vision` |
+| `internvl_llama3`  | InternVL2-8B            | Meta-Llama-3.1-8B-Instruct           | 8B / 8B          | `.venv-vision` |
+
+All five are wired into `benchmark_pipeline.py`'s `MODELS` list. Each does `--runs`
+timed passes (default 3) across every screenshot in `images/`, with per-agent
+energy (kWh), emissions (kg CO2), and duration logged via CodeCarbon.
+
+## Generation settings
+
+Every call uses greedy decoding (`do_sample=False`). Agents 2–5 additionally set
+`top_p=1.0` and `repetition_penalty=1.05`. The stage files are shared, so these
+limits are identical for every text LLM.
+
+| Agent | Prompt truncation (`max_length`) | `max_new_tokens` | Notes |
+| ----- | -------------------------------- | ---------------- | ----- |
+| 1 — UI Perception | model-specific image preprocessing | 4096 | Qwen2-VL: `min/max_pixels` = 256/1280 × 28²; InternVL2: 448px tiles, up to 12 + thumbnail; Phi-3.5-vision: `num_crops=16` |
+| 2 — Test Case Generation | 6144 | 4000 | |
+| 3 — MR Generation | 6144 | 6000 | |
+| 4 — MR Prioritization | 8192 | 4000 | |
+| 5 — Suite Reduction | 4096 | 2000 | |
+
+**Token-limit history (reproducibility).** Commit `fbc1a2e` (2026-10-29) raised
+Agent 2's prompt limit from 4096 to 6144, and Agent 4's prompt limit from 6144 to
+8192 and `max_new_tokens` from 2000 to 4000. Qwen and Phi-3.5 results were
+collected before this change and have not been re-run with the new limits; the
+InternVL + Mistral / Llama-3.1 configurations were run with them. Check out an
+earlier commit to reproduce the older settings.
+
+**Measurement.** One CodeCarbon `EmissionsTracker` per agent per screen
+(`save_to_file=False`; values are appended to `outputs/emissions_log_<model>.csv`
+along with the detected region/country). Before timed runs: model warmup, then a
+300 s stabilization wait; 60 s cooldown between runs.
 
 ## Repository structure
 
@@ -78,6 +127,7 @@ passes (default 3) across every screenshot in `images/`, with per-agent energy
 ├── main.py                        # Simple single-model backup — full-dataset run with Qwen,
 │                                   #   resumable via checkpoint + --batch-size, flat outputs/
 ├── benchmark_pipeline.py          # Multi-model comparison runner — resumable, batched, per-model outputs
+├── requirements.txt               # Qwen env (.venv); requirements-vision.txt is for .venv-vision
 ├── breakeven_check.py             # Reads outputs from a main.py run; computes how many regression
 │                                   #   cycles it takes for Agent 5's own generation cost to pay for
 │                                   #   itself via its projected per-cycle savings
@@ -88,10 +138,12 @@ passes (default 3) across every screenshot in `images/`, with per-agent energy
 ├── stages/
 │   ├── ui_analysis.py             # Agent 1 — Qwen2-VL
 │   ├── ui_analysis_phi.py         # Agent 1 — Phi-3.5-vision
-│   ├── ui_analysis_internvl.py    # Agent 1 — InternVL2-8B
+│   ├── ui_analysis_internvl.py    # Agent 1 — InternVL2-8B (shared by internvl / internvl_mistral / internvl_llama3)
 │   ├── test_generation.py         # Agent 2 (shared) — also Qwen's load_text_model()
 │   ├── text_model_phi.py          # Agent 2/3/4/5 text model loader — Phi-3.5-mini
 │   ├── text_model_internlm.py     # Agent 2/3/4/5 text model loader — internlm2_5-7b-chat
+│   ├── text_model_mistral.py      # Agent 2/3/4/5 text model loader — Mistral-7B-Instruct-v0.3
+│   ├── text_model_llama3.py       # Agent 2/3/4/5 text model loader — Meta-Llama-3.1-8B-Instruct
 │   ├── metamorphic_testing.py     # Agent 3 (shared)
 │   ├── optimization.py            # Agent 4 (shared)
 │   └── optimization_reduction.py  # Agent 5 (shared)
@@ -110,8 +162,8 @@ passes (default 3) across every screenshot in `images/`, with per-agent energy
 ```
 
 **Note:** `stages/test_generation.py`'s `load_text_model()` doubles as both the
-Agent 2 stage file and Qwen's text-model loader — Phi/InternVL have their own
-dedicated `text_model_<name>.py` loader instead.
+Agent 2 stage file and Qwen's text-model loader — Phi, InternLM, Mistral and Llama-3.1
+have their own dedicated `text_model_<name>.py` loader instead.
 
 ## Why two virtual environments
 
@@ -121,12 +173,14 @@ modeling code written against an older `transformers` internal API that was neve
 updated by the model authors — running them under a modern `transformers` version
 raises cache-API or attribute errors (`DynamicCache` / `all_tied_weights_keys`
 depending on the model). Pinning `transformers==4.46.1` in a separate venv resolves
-this for Phi-3.5-vision, Phi-3.5-mini, and InternVL2-8B.
+this for Phi-3.5-vision, Phi-3.5-mini, and InternVL2-8B. Mistral and Llama-3.1 load
+natively (no `trust_remote_code`) and run fine under 4.46.1, so the InternVL2 + Mistral
+and InternVL2 + Llama-3.1 pairings use `.venv-vision` too.
 
 | Venv           | Used for            | Key package versions                          |
 | -------------- | -------------------- | --------------------------------------------- |
 | `.venv`        | Qwen                  | `transformers==5.8.1`, `torch==2.11.0+cu128`  |
-| `.venv-vision` | Phi-3.5, InternVL2    | `transformers==4.46.1`, `torch==2.11.0+cu128` |
+| `.venv-vision` | Phi-3.5, all InternVL2 pairings (InternLM, Mistral, Llama-3.1) | `transformers==4.46.1`, `torch==2.11.0+cu128` |
 
 ## Setup
 
@@ -135,8 +189,9 @@ and a CUDA-capable GPU — each model pair (VLM + text LLM, ~7-8B params each) n
 roughly 24GB+ VRAM loaded together in bf16. Running on less will likely OOM.
 
 **Hugging Face access:** all models are pulled from the Hugging Face Hub on first
-run. If any of Qwen2-VL, Qwen2.5, Phi-3.5, InternVL2, or internlm2_5 require
-accepting a license or are gated, run `huggingface-cli login` first — otherwise
+run. Mistral-7B-Instruct-v0.3 and Meta-Llama-3.1-8B-Instruct are **gated**: accept
+the terms on each model page (Llama approval is manual and may not be instant). If any
+other model requires accepting a license, run `huggingface-cli login` (or set `HF_TOKEN`) first — otherwise
 the first `from_pretrained()` call will fail with a 401. Internet access is
 required at least for this first run per model, to download weights into the
 local HF cache; after that, it may be able to run offline (untested here).
@@ -146,7 +201,8 @@ local HF cache; after that, it may be able to run offline (untested here).
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install "transformers==5.8.1" torch accelerate pillow qwen-vl-utils json_repair codecarbon matplotlib pandas
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
 ```
 
 ### 2. Phi-3.5 / InternVL2 environment
@@ -155,8 +211,7 @@ pip install "transformers==5.8.1" torch accelerate pillow qwen-vl-utils json_rep
 python -m venv .venv-vision
 .\.venv-vision\Scripts\Activate.ps1
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-pip install "transformers==4.46.1"
-pip install accelerate pillow json_repair codecarbon einops timm sentencepiece protobuf matplotlib pandas
+pip install -r requirements-vision.txt
 ```
 
 ⚠️ Before running `--model internvl` for real, do a quick standalone check that
@@ -204,8 +259,10 @@ python benchmark_pipeline.py --model qwen
 # Phi-3.5 — from .venv-vision
 python benchmark_pipeline.py --model phi35
 
-# InternVL2 — from .venv-vision
+# InternVL2 pairings — from .venv-vision
 python benchmark_pipeline.py --model internvl
+python benchmark_pipeline.py --model internvl_mistral
+python benchmark_pipeline.py --model internvl_llama3
 ```
 
 By default this does `--runs` (3) timed passes over every image in `images/`,
