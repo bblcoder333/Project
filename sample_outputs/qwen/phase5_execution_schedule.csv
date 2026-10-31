@@ -1,0 +1,5 @@
+mr_id,source_tc_id,screen_id,topic,mr_category,transformation,decision,execution_tier,cycle_frequency,reasoning
+MR-01,TC_11794_003,11794,login,VALIDATION_CONSISTENCY,Change invalid value from invalidemail to invalidemail2,high_priority_keep,always,1,VALIDATION_CONSISTENCY MR to ensure invalid-input consistency is always checked.
+MR-02,TC_11794_001,11794,login,ROBUSTNESS,Repeat the primary action a second time,keep,sampled,2,ROBUSTNESS MR to check robustness is sampled to avoid redundant checks.
+MR-04,TC_11794_005,11794,login,ROBUSTNESS,Repeat the primary action a second time,reduce_repetitions,optional,10,ROBUSTNESS MR to check robustness is optional as it is a reduction of repetitions.
+MR-03,TC_11794_004,11794,login,ROBUSTNESS,Repeat the primary action a second time,partial_sampling,sampled,5,ROBUSTNESS MR to check robustness is sampled due to partial sampling.

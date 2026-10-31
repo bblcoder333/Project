@@ -1,0 +1,5 @@
+mr_id,source_tc_id,screen_id,topic,mr_category,transformation,expected_relation,decision,reason
+MR-01,TC_11794_003,11794,login,VALIDATION_CONSISTENCY,Change invalid value from invalidemail to invalidemail2,Same validation error should appear as with the original invalid value,high_priority_keep,invalid-input consistency
+MR-02,TC_11794_001,11794,login,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,keep,First instance of robustness check on screen
+MR-04,TC_11794_005,11794,login,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,reduce_repetitions,Coverage rule: exact duplicate ROBUSTNESS MR on the same screen
+MR-03,TC_11794_004,11794,login,ROBUSTNESS,Repeat the primary action a second time,App does not crash or show an inconsistent state on repeated action,partial_sampling,"Same pattern, different element"

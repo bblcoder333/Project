@@ -121,6 +121,49 @@ earlier commit to reproduce the older settings.
 along with the detected region/country). Before timed runs: model warmup, then a
 300 s stabilization wait; 60 s cooldown between runs.
 
+## Prompts
+
+All five prompts are reproduced verbatim in [`PROMPTS.md`](PROMPTS.md). Each phase sends a
+system message plus a user prompt (Phase 1 sends the user prompt together with the image).
+Templates contain `{placeholders}` that the code fills per screen; the JSON braces shown in
+`PROMPTS.md` are the literal output format requested from the model.
+
+| Phase | Prompt (source file) | Purpose | Filled in per screen |
+| ----- | -------------------- | ------- | -------------------- |
+| 1 — UI Perception | `SCREENSHOT_PROMPT` (`stages/ui_analysis*.py`) | Makes the VLM describe the screenshot as a developer would need it: every region top to bottom, UI components, verbatim visible text, approximate positions, typography and accessibility concerns, in a fixed six-section structure (A–F) plus a bullet recap. This text is the only input later phases see. | None (image supplied separately) |
+| 2 — Source Test Generation | `TESTCASE_PROMPT_TEMPLATE` (`stages/test_generation.py`) | Generates manual test cases from the description only. Eight rules constrain it: extract only elements that exist, a hallucination guard (cite the sentence or do not test it), no observation-only tests, minimum coverage per element type, specific expected results, one test per social icon, per-state toggle tests, and structured `test_data`. Output is JSON. | `screen_id`, `topic`, `description` |
+| 3 — MR Generation | `MR_PROMPT_TEMPLATE` (`stages/metamorphic_testing.py`) | Classifies each source test case into one of six patterns (A–F: invalid input, unit toggle, tab/segment, valid numeric measurement, tap/click action, groups of similar taps) and emits the matching metamorphic relations in a fixed JSON shape. Exact counts of validation and numeric MRs are stated so the model checks its own coverage. | `screen_id`, `topic`, `tc_count`, `negative_count`, `numeric_count`, `source_csv` |
+| 4 — MR Prioritization | `OPTIMIZATION_PROMPT_TEMPLATE` (`stages/optimization.py`) | Assigns each MR one of five decisions (`high_priority_keep`, `keep`, `partial_sampling`, `reduce_repetitions`, `lower_priority`) with a five-step decision tree built on "computable ground truth": only correctness-verifying MRs may be `high_priority_keep`; behavior-stability MRs are capped at `keep`. Goal: remove redundant executions while preserving behavioral coverage. | `screen_id`, `topic`, `mr_csv` |
+| 5 — Execution Scheduling | `AGENT5_PROMPT_TEMPLATE` (`stages/optimization_reduction.py`) | Assigns each MR an execution tier (`always`, `sampled`, `optional`, `dropped`) and a cycle frequency, restricted to the tiers allowed for its Phase 4 decision, to minimize repeated execution energy. | `screen_id`, `topic`, `mr_csv` |
+
+### Changes made for model variations
+
+**The prompt text is the same for every model.** The three Phase 1 prompts in
+`ui_analysis.py` (Qwen2-VL), `ui_analysis_phi.py` (Phi-3.5-vision) and
+`ui_analysis_internvl.py` (InternVL2) are character-for-character identical, and
+Phases 2–5 use one shared template for all five text LLMs. No wording was adapted
+per model, so differences between configurations are not caused by prompt differences.
+
+What does vary is how the prompt is delivered, because each model family has its own interface:
+
+| Component | Model | Variation |
+| --------- | ----- | --------- |
+| Phase 1 image input | Qwen2-VL | Image and prompt sent as one chat message through the processor; image resolution bounded by `min_pixels` = 256 × 28² and `max_pixels` = 1280 × 28² |
+| Phase 1 image input | InternVL2-8B | Prompt prefixed with `<image>` and sent with `model.chat`; image split into 448 px tiles (up to 12 plus a thumbnail) |
+| Phase 1 image input | Phi-3.5-vision | Prompt prefixed with `<\|image_1\|>` inside the user message; processor `num_crops=16` |
+| Phases 2–5 chat format | Qwen2.5, Phi-3.5-mini, InternLM2.5, Mistral-7B, Llama-3.1 | The same system + user messages are rendered with each model's own chat template via `tokenizer.apply_chat_template` |
+| Phases 2–5 stopping | Llama-3.1 | Generation also stops on `<\|eot_id\|>` (Llama's end-of-turn token), set in `stages/text_model_llama3.py` |
+| Phases 2–5 padding | Mistral, Llama-3.1 | No pad token by default; the end-of-sequence token is used as the pad token |
+
+Two other intentional changes affect results but not prompt wording: the token limits
+listed under *Generation settings* (raised in the final code version), and the
+deterministic output-repair steps (type sanitizing in Phases 2–3, hallucinated-MR filtering
+and missing-MR backfill in Phase 4) described in *Pipeline overview*.
+
+## Sample outputs
+
+[`sample_outputs/`](sample_outputs/README.md) contains one representative result per phase for a single screen (ENRICO screen 11794) from the Qwen2-VL + Qwen2.5 configuration, together with an explanation of each output. The corresponding prompts are in [`PROMPTS.md`](PROMPTS.md).
+
 ## Repository structure
 
 ```
@@ -128,6 +171,9 @@ along with the detected region/country). Before timed runs: model warmup, then a
 │                                   #   resumable via checkpoint + --batch-size, flat outputs/
 ├── benchmark_pipeline.py          # Multi-model comparison runner — resumable, batched, per-model outputs
 ├── requirements.txt               # Qwen env (.venv); requirements-vision.txt is for .venv-vision
+├── PROMPTS.md                     # The five phase prompts, verbatim
+├── sample_outputs/                # One example output per phase (Qwen), with explanations
+├── results/                       # Master results workbook + sheet-by-sheet description (see results/README.md)
 ├── breakeven_check.py             # Reads outputs from a main.py run; computes how many regression
 │                                   #   cycles it takes for Agent 5's own generation cost to pay for
 │                                   #   itself via its projected per-cycle savings
